@@ -2,7 +2,7 @@
   "framework": "nextjs",
   "regions": ["gru1"],
   "installCommand": "npm install --no-audit --progress=false --legacy-peer-deps",
-  "buildCommand": "pnpm run build",
+  "buildCommand": "npm run build",
   "functions": {
     "src/app/api/checklists-operacionais/respostas/route.ts": {
       "maxDuration": 60,
