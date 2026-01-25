@@ -1,0 +1,183 @@
+/* Leaflet CSS - deve vir antes de todas as outras regras */
+@import 'leaflet/dist/leaflet.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Fix para PageSpeed: evitar overflow:visible em img, video e canvas */
+@layer base {
+  img,
+  video,
+  canvas {
+    overflow: clip !important;
+    max-width: 100%;
+    height: auto;
+  }
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: #ffffff;
+  --foreground: #1a1d5e;
+  --card: #ffffff;
+  --card-foreground: #1a1d5e;
+  --popover: #ffffff;
+  --popover-foreground: #1a1d5e;
+  --primary: #009ee2;
+  --primary-foreground: #f5fbff;
+  --secondary: #e8f5ff;
+  --secondary-foreground: #0b3d67;
+  --muted: #e8f0ff;
+  --muted-foreground: #45607a;
+  --accent: #e0f4ff;
+  --accent-foreground: #0b3d67;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: #d9e5f2;
+  --input: #d9e5f2;
+  --ring: #009ee2;
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: #f6fbff;
+  --sidebar-foreground: #0b2b4f;
+  --sidebar-primary: #009ee2;
+  --sidebar-primary-foreground: #f5fbff;
+  --sidebar-accent: #e0f4ff;
+  --sidebar-accent-foreground: #0b2b4f;
+  --sidebar-border: #d4e3f2;
+  --sidebar-ring: #009ee2;
+}
+
+.dark {
+  --background: #061426;
+  --foreground: #e3f2ff;
+  --card: #0b2038;
+  --card-foreground: #e3f2ff;
+  --popover: #0b2038;
+  --popover-foreground: #e3f2ff;
+  --primary: #38bdf8;
+  --primary-foreground: #042136;
+  --secondary: #102a46;
+  --secondary-foreground: #d6ecff;
+  --muted: #102a46;
+  --muted-foreground: #7fb8df;
+  --accent: #102a46;
+  --accent-foreground: #d6ecff;
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: #38bdf8;
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: #07192f;
+  --sidebar-foreground: #d6ecff;
+  --sidebar-primary: #38bdf8;
+  --sidebar-primary-foreground: #042136;
+  --sidebar-accent: #102a46;
+  --sidebar-accent-foreground: #d6ecff;
+  --sidebar-border: rgb(255 255 255 / 10%);
+  --sidebar-ring: #38bdf8;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  
+  /* Scroll suave para toda a página */
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Portfolio Animation */
+@keyframes scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes scroll-slow {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-25%); /* 4 duplicações = 25% por ciclo */
+  }
+}
+
+.animate-scroll {
+  animation: scroll 15s linear infinite;
+  display: flex;
+  width: fit-content;
+}
+
+.animate-scroll-slow {
+  animation: scroll-slow 30s linear infinite;
+  display: flex;
+  width: fit-content;
+  will-change: transform;
+}
+
+/* Removido pausar no hover - continua rolando sempre */
+
+/* Portfolio Image Hover Effects */
+.portfolio-image-container {
+  position: relative;
+}
+
+.portfolio-image {
+  filter: grayscale(1) brightness(0.9);
+  transition: filter 0.7s ease-out;
+}
+
+.portfolio-image-container:hover .portfolio-image {
+  filter: grayscale(0) brightness(1.1) contrast(1.15) saturate(1.1) !important;
+}
+
+.portfolio-image-other {
+  filter: grayscale(1) brightness(0.85) opacity(0.6);
+  transition: filter 0.7s ease-out, opacity 0.7s ease-out;
+}
+
+.portfolio-image-container:hover .portfolio-image-other {
+  filter: grayscale(0) brightness(1.1) contrast(1.15) saturate(1.1) !important;
+  opacity: 1 !important;
+}
+
+/* Portfolio Unified - Sem background visível */
+.portfolio-logo-container {
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  transition: transform 0.3s ease-out;
+}
+
+.portfolio-image-unified {
+  filter: grayscale(1) brightness(0.85) opacity(0.6);
+  transition: filter 0.7s ease-out, opacity 0.7s ease-out;
+  /* Remove background branco dos PNGs */
+  mix-blend-mode: multiply;
+}
+
+.portfolio-logo-container:hover {
+  transform: scale(1.1);
+  background-color: transparent !important;
+}
+
+.portfolio-logo-container:hover .portfolio-image-unified {
+  filter: grayscale(0) brightness(1.1) contrast(1.15) saturate(1.1) !important;
+  opacity: 1 !important;
+}

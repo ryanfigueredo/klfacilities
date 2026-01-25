@@ -1,0 +1,87 @@
+{
+  "expo": {
+    "name": "KL Administração",
+    "slug": "kl-adm",
+    "version": "1.0.1",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kl.adm",
+      "buildNumber": "2",
+      "icon": "./assets/icon.png",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Este app precisa de acesso à câmera para tirar fotos dos checklists.",
+        "NSLocationWhenInUseUsageDescription": "Este app precisa de acesso à localização para registrar a localização das respostas do checklist.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Este app precisa de acesso à localização para registrar a localização das respostas do checklist."
+      },
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": []
+      },
+        "privacyPolicyUrl": "https://www.klfacilities.com.br/compliance/privacidade"
+    },
+    "web": {
+      "favicon": "./assets/favicon-96x96.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "14a2446d-f323-4016-aeb3-c042a59ef813"
+      }
+    },
+    "plugins": [
+      "expo-font",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "minSdkVersion": 24
+          }
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Este app precisa de acesso à câmera para tirar fotos dos checklists.",
+          "photosPermission": false,
+          "mediaLibraryPermission": false,
+          "allowsEditing": true
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Este app precisa de acesso à localização para registrar a localização das respostas do checklist."
+        }
+      ]
+    ],
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#009ee2"
+      },
+      "package": "com.kl.adm",
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "privacyPolicy": "https://www.klfacilities.com.br/compliance/privacidade"
+    }
+  }
+}

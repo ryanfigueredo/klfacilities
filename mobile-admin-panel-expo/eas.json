@@ -1,0 +1,53 @@
+{
+  "cli": {
+    "version": ">= 5.2.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "android": {
+        "buildType": "apk"
+      },
+      "distribution": "internal"
+    },
+    "apk-production": {
+      "autoIncrement": true,
+      "android": {
+        "buildType": "apk",
+        "image": "latest"
+      },
+      "env": {
+        "EXPO_ANDROID_TARGET_SDK_VERSION": "35",
+        "EXPO_ANDROID_COMPILE_SDK_VERSION": "35",
+        "EXPO_ANDROID_MIN_SDK_VERSION": "24"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "ios": {
+        "buildConfiguration": "Release"
+      },
+      "env": {
+        "EXPO_ANDROID_TARGET_SDK_VERSION": "35",
+        "EXPO_ANDROID_COMPILE_SDK_VERSION": "35",
+        "EXPO_ANDROID_MIN_SDK_VERSION": "24"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "releaseStatus": "completed",
+        "track": "production"
+      },
+      "ios": {}
+    }
+  }
+}

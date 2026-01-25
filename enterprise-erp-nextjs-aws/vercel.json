@@ -1,0 +1,18 @@
+{
+  "framework": "nextjs",
+  "regions": ["gru1"],
+  "installCommand": "npm install --no-audit --progress=false --legacy-peer-deps",
+  "buildCommand": "pnpm run build",
+  "functions": {
+    "src/app/api/checklists-operacionais/respostas/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/whatsapp/monitor",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

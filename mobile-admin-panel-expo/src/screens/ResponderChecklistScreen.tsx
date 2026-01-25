@@ -1,0 +1,2875 @@
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  TextInput,
+  Modal,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
+import * as Location from "expo-location";
+import * as Device from "expo-device";
+import * as FileSystem from "expo-file-system";
+import SignatureCanvas from "react-native-signature-canvas";
+import {
+  obterChecklistEscopo,
+  ChecklistEscopoDetalhes,
+  api,
+} from "../services/api";
+import { API_URL, API_ENDPOINTS } from "../config/api";
+import { normalizeBoolean } from "../utils/booleanUtils";
+import {
+  compressImageForUpload,
+  compressDataUrlToDataUrl,
+} from "../utils/compressImage";
+import * as NetInfo from "@react-native-community/netinfo";
+import * as SecureStore from "expo-secure-store";
+import {
+  saveDraftLocally,
+  getLocalDraft,
+  syncAllPendingDrafts,
+  getSyncStatus,
+  setupAutoSync,
+  SyncStatus,
+} from "../services/offlineSync";
+
+type PerguntaTipo = "TEXTO" | "FOTO" | "BOOLEANO" | "NUMERICO" | "SELECAO";
+
+interface Pergunta {
+  id: string;
+  titulo: string;
+  descricao: string | null;
+  tipo: PerguntaTipo;
+  obrigatoria: boolean;
+  ordem: number;
+  opcoes: string[];
+  peso?: number | null;
+  permiteMultiplasFotos?: boolean;
+  permiteAnexarFoto?: boolean;
+}
+
+interface Grupo {
+  id: string;
+  titulo: string;
+  descricao: string | null;
+  ordem: number;
+  perguntas: Pergunta[];
+}
+
+interface Resposta {
+  perguntaId: string;
+  tipo: PerguntaTipo;
+  valorTexto?: string;
+  valorBoolean?: boolean;
+  valorNumero?: number;
+  valorOpcao?: string;
+  nota?: number;
+  fotoUrl?: string;
+}
+
+export default function ResponderChecklistScreen() {
+  const navigation = useNavigation();
+  const route = useRoute();
+  const { escopoId } = route.params as { escopoId: string };
+  const insets = useSafeAreaInsets();
+
+  const [loading, setLoading] = useState(true);
+  const [escopo, setEscopo] = useState<ChecklistEscopoDetalhes | null>(null);
+  const [rascunhoId, setRascunhoId] = useState<string | null>(null);
+  const [salvandoRascunho, setSalvandoRascunho] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+
+  // Estados das respostas
+  const [textAnswers, setTextAnswers] = useState<Record<string, string>>({});
+  const [booleanAnswers, setBooleanAnswers] = useState<
+    Record<string, "CONFORME" | "NAO_CONFORME" | "NAO_APLICA" | null>
+  >({});
+  const [naoConformeDetails, setNaoConformeDetails] = useState<
+    Record<string, { motivo: string; resolucao: string }>
+  >({});
+  const [numericAnswers, setNumericAnswers] = useState<Record<string, string>>(
+    {}
+  );
+  const [selectAnswers, setSelectAnswers] = useState<Record<string, string>>(
+    {}
+  );
+  const [photoAnswers, setPhotoAnswers] = useState<Record<string, string[]>>(
+    {}
+  );
+  const [notaAnswers, setNotaAnswers] = useState<Record<string, number | null>>(
+    {}
+  );
+  const [observacoes, setObservacoes] = useState("");
+  const [localizacao, setLocalizacao] =
+    useState<Location.LocationObject | null>(null);
+
+  // Estados para assinaturas
+  const [showAssinaturaModal, setShowAssinaturaModal] = useState(false);
+  const [assinaturaStep, setAssinaturaStep] = useState<
+    "gerente" | "supervisor"
+  >("gerente");
+  const [assinaturaGerenteDataUrl, setAssinaturaGerenteDataUrl] = useState<
+    string | null
+  >(null);
+  const [selfieSupervisorUri, setSelfieSupervisorUri] = useState<string | null>(
+    null
+  );
+  const signatureRef = useRef<any>(null);
+
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const initialLoadDoneRef = useRef(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>({
+    isOnline: true,
+    pendingSyncs: 0,
+    isSyncing: false,
+  });
+
+  const solicitarPermissoes = useCallback(async () => {
+    await ImagePicker.requestCameraPermissionsAsync();
+    await ImagePicker.requestMediaLibraryPermissionsAsync();
+    await Location.requestForegroundPermissionsAsync();
+  }, []);
+
+  const criarRascunhoInicial = useCallback(async (escopoIdParam: string) => {
+    try {
+      const formData = new FormData();
+      formData.append("escopoId", escopoIdParam);
+      formData.append("isDraft", "true");
+      formData.append("answers", JSON.stringify([]));
+
+      const response = await api.post(
+        API_ENDPOINTS.CHECKLISTS_RESPONDER,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
+      if (response.data?.resposta?.id) {
+        setRascunhoId(response.data.resposta.id);
+      } else {
+        console.warn("Rascunho criado mas sem ID na resposta:", response.data);
+      }
+    } catch (error: any) {
+      console.error("Erro ao criar rascunho inicial:", {
+        message: error?.message,
+        status: error?.response?.status,
+        statusText: error?.response?.statusText,
+        data: error?.response?.data,
+      });
+    }
+  }, []);
+
+  const carregarRascunho = useCallback(
+    async (escopoIdParam: string, escopoData?: ChecklistEscopoDetalhes) => {
+      try {
+        // Obter token de autenticação
+        const token = await SecureStore.getItemAsync("authToken");
+        const headers: Record<string, string> = {
+          Accept: "application/json",
+        };
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
+
+        const response = await fetch(
+          `${API_URL}${API_ENDPOINTS.CHECKLISTS_RESPONDER}?escopoId=${escopoIdParam}`,
+          {
+            method: "GET",
+            headers,
+          }
+        );
+
+        if (!response.ok) {
+          console.error("❌ Erro ao buscar rascunho:", {
+            status: response.status,
+            statusText: response.statusText,
+            escopoId: escopoIdParam,
+          });
+          if (response.status === 401) {
+            console.error("❌ Token inválido ou expirado ao buscar rascunho!");
+          }
+        }
+
+        const data = await response.json();
+
+        if (data.rascunho) {
+          const r = data.rascunho;
+          setRascunhoId(r.id);
+
+          if (r.observacoes) {
+            setObservacoes(r.observacoes);
+          }
+
+          // Usar o escopo passado como parâmetro ou o estado atual
+          const escopoParaBuscar = escopoData || escopo;
+
+          if (!escopoParaBuscar) {
+            console.warn(
+              "Escopo não disponível ao carregar rascunho, tentando novamente após carregar escopo"
+            );
+            return;
+          }
+
+          // Carregar respostas
+          r.respostas?.forEach((resposta: any) => {
+            // Coletar todas as perguntas de todos os grupos
+            const todasPerguntas: any[] = [];
+            if (
+              escopoParaBuscar?.escopo?.template?.grupos &&
+              Array.isArray(escopoParaBuscar.escopo.template.grupos)
+            ) {
+              escopoParaBuscar.escopo.template.grupos.forEach((g: any) => {
+                if (g.perguntas && Array.isArray(g.perguntas)) {
+                  todasPerguntas.push(...g.perguntas);
+                }
+              });
+            }
+            const pergunta = todasPerguntas.find(
+              (p) => p.id === resposta.perguntaId
+            );
+
+            if (!pergunta) return;
+
+            switch (pergunta.tipo) {
+              case "TEXTO":
+                if (resposta.valorTexto) {
+                  setTextAnswers((prev) => ({
+                    ...prev,
+                    [pergunta.id]: resposta.valorTexto,
+                  }));
+                }
+                break;
+              case "BOOLEANO":
+                if (
+                  resposta.valorBoolean !== null &&
+                  resposta.valorBoolean !== undefined
+                ) {
+                  const valor = resposta.valorBoolean
+                    ? "CONFORME"
+                    : "NAO_CONFORME";
+                  setBooleanAnswers((prev) => ({
+                    ...prev,
+                    [pergunta.id]: valor,
+                  }));
+                }
+                if (resposta.observacao) {
+                  try {
+                    const partes = resposta.observacao.split("\n\n");
+                    if (partes.length >= 2) {
+                      const motivo = partes[0].replace("Motivo: ", "");
+                      const resolucao = partes[1].replace(
+                        "O que foi feito para resolver: ",
+                        ""
+                      );
+                      setNaoConformeDetails((prev) => ({
+                        ...prev,
+                        [pergunta.id]: { motivo, resolucao },
+                      }));
+                    }
+                  } catch (e) {
+                    console.error("Erro ao parsear observação:", e);
+                  }
+                }
+                // Carregar fotos anexadas se houver
+                if (resposta.fotoUrl) {
+                  try {
+                    const fotos =
+                      typeof resposta.fotoUrl === "string"
+                        ? resposta.fotoUrl.startsWith("[")
+                          ? JSON.parse(resposta.fotoUrl)
+                          : [resposta.fotoUrl]
+                        : [];
+                    setPhotoAnswers((prev) => ({
+                      ...prev,
+                      [`${pergunta.id}_anexo`]: fotos,
+                    }));
+                  } catch {
+                    setPhotoAnswers((prev) => ({
+                      ...prev,
+                      [`${pergunta.id}_anexo`]: [resposta.fotoUrl],
+                    }));
+                  }
+                }
+                break;
+              case "NUMERICO":
+                if (
+                  resposta.valorNumero !== null &&
+                  resposta.valorNumero !== undefined
+                ) {
+                  setNumericAnswers((prev) => ({
+                    ...prev,
+                    [pergunta.id]: resposta.valorNumero.toString(),
+                  }));
+                }
+                break;
+              case "SELECAO":
+                if (resposta.valorOpcao) {
+                  setSelectAnswers((prev) => ({
+                    ...prev,
+                    [pergunta.id]: resposta.valorOpcao,
+                  }));
+                }
+                break;
+              case "FOTO":
+                if (resposta.fotoUrl) {
+                  try {
+                    const fotos =
+                      typeof resposta.fotoUrl === "string"
+                        ? resposta.fotoUrl.startsWith("[")
+                          ? JSON.parse(resposta.fotoUrl)
+                          : [resposta.fotoUrl]
+                        : [];
+                    setPhotoAnswers((prev) => ({
+                      ...prev,
+                      [pergunta.id]: fotos,
+                    }));
+                  } catch {
+                    setPhotoAnswers((prev) => ({
+                      ...prev,
+                      [pergunta.id]: [resposta.fotoUrl],
+                    }));
+                  }
+                }
+                break;
+            }
+
+            // Carregar nota se houver
+            if (resposta.nota !== null && resposta.nota !== undefined) {
+              setNotaAnswers((prev) => ({
+                ...prev,
+                [pergunta.id]: resposta.nota,
+              }));
+            }
+          });
+
+          // Obter localização
+          if (r.lat && r.lng) {
+            setLocalizacao({
+              coords: {
+                latitude: r.lat,
+                longitude: r.lng,
+                accuracy: r.accuracy || null,
+                altitude: null,
+                altitudeAccuracy: null,
+                heading: null,
+                speed: null,
+              },
+              timestamp: Date.now(),
+            } as Location.LocationObject);
+          }
+        } else {
+          // Criar rascunho inicial se não existir
+          await criarRascunhoInicial(escopoIdParam);
+        }
+      } catch (error: any) {
+        console.error("Erro ao carregar rascunho:", error);
+      }
+    },
+    [escopo, criarRascunhoInicial]
+  );
+
+  const carregarEscopo = useCallback(async () => {
+    if (!escopoId) {
+      setLoading(false);
+      Alert.alert("Erro", "Checklist inválido. Volte e tente novamente.");
+      navigation.goBack();
+      return;
+    }
+    try {
+      setLoading(true);
+      initialLoadDoneRef.current = false;
+      const data = await obterChecklistEscopo(escopoId);
+
+      // Normalizar valores boolean que podem vir como strings da API
+      if (data.escopo?.template?.grupos) {
+        data.escopo.template.grupos = data.escopo.template.grupos.map(
+          (grupo: any) => ({
+            ...grupo,
+            perguntas: grupo.perguntas.map((pergunta: any) => ({
+              ...pergunta,
+              obrigatoria: normalizeBoolean(pergunta.obrigatoria),
+              peso:
+                pergunta.peso !== undefined && pergunta.peso !== null
+                  ? Number(pergunta.peso)
+                  : null,
+              permiteMultiplasFotos:
+                pergunta.permiteMultiplasFotos !== undefined
+                  ? normalizeBoolean(pergunta.permiteMultiplasFotos)
+                  : undefined,
+              permiteAnexarFoto:
+                pergunta.permiteAnexarFoto !== undefined
+                  ? normalizeBoolean(pergunta.permiteAnexarFoto)
+                  : undefined,
+            })),
+          })
+        );
+      }
+
+      if (data.escopo?.ativo !== undefined) {
+        data.escopo.ativo = normalizeBoolean(data.escopo.ativo);
+      }
+
+      setEscopo(data);
+
+      // Buscar rascunho existente (passar o escopo completo como parâmetro)
+      // Não usar carregarRascunho diretamente para evitar loop de dependências
+      try {
+        // Usar api do axios que já tem o token configurado
+        const token = await SecureStore.getItemAsync("authToken");
+        const headers: Record<string, string> = {
+          Accept: "application/json",
+        };
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
+
+        const response = await fetch(
+          `${API_URL}${API_ENDPOINTS.CHECKLISTS_RESPONDER}?escopoId=${data.escopo.id}`,
+          {
+            method: "GET",
+            headers,
+          }
+        );
+
+        if (!response.ok) {
+          console.error("❌ Erro ao buscar rascunho:", {
+            status: response.status,
+            statusText: response.statusText,
+          });
+          // Se der 401, pode ser problema de autenticação
+          if (response.status === 401) {
+            console.error("❌ Token inválido ou expirado!");
+          }
+        }
+
+        const rascunhoData = await response.json();
+
+        if (rascunhoData.rascunho) {
+          const r = rascunhoData.rascunho;
+          setRascunhoId(r.id);
+
+          const local = await getLocalDraft(data.escopo.id, r.id);
+          const apiCount = r.respostas?.length ?? 0;
+          const useLocal =
+            local?.formData?.answers &&
+            Array.isArray(local.formData.answers) &&
+            local.formData.answers.length >= apiCount;
+
+          if (useLocal && local) {
+            const fd = local.formData;
+            if (fd.observacoes) setObservacoes(fd.observacoes);
+            const todasPerguntas: { id: string; tipo: string }[] = [];
+            if (data.escopo?.template?.grupos) {
+              data.escopo.template.grupos.forEach((g: any) => {
+                if (g.perguntas?.length) todasPerguntas.push(...g.perguntas);
+              });
+            }
+            const byId = new Map(todasPerguntas.map((p) => [p.id, p]));
+            (fd.answers || []).forEach((a: any) => {
+              const pergunta = byId.get(a.perguntaId);
+              if (!pergunta) return;
+              switch (pergunta.tipo) {
+                case "TEXTO":
+                  if (a.valorTexto) setTextAnswers((prev) => ({ ...prev, [pergunta.id]: a.valorTexto }));
+                  break;
+                case "BOOLEANO":
+                  if (a.valorBoolean !== undefined && a.valorBoolean !== null) {
+                    setBooleanAnswers((prev) => ({
+                      ...prev,
+                      [pergunta.id]: a.valorBoolean ? "CONFORME" : "NAO_CONFORME",
+                    }));
+                    if (!a.valorBoolean && a.valorTexto) {
+                      try {
+                        const partes = a.valorTexto.split("\n\n");
+                        if (partes.length >= 2) {
+                          const motivo = partes[0].replace("Motivo: ", "");
+                          const resolucao = partes[1].replace("O que foi feito para resolver: ", "");
+                          setNaoConformeDetails((prev) => ({ ...prev, [pergunta.id]: { motivo, resolucao } }));
+                        }
+                      } catch (_) {}
+                    }
+                  }
+                  break;
+                case "NUMERICO":
+                  if (a.valorNumero != null) setNumericAnswers((prev) => ({ ...prev, [pergunta.id]: String(a.valorNumero) }));
+                  break;
+                case "SELECAO":
+                  if (a.valorOpcao) setSelectAnswers((prev) => ({ ...prev, [pergunta.id]: a.valorOpcao }));
+                  break;
+                case "FOTO":
+                  if (a.fotoUrl) {
+                    try {
+                      const uris = typeof a.fotoUrl === "string" && a.fotoUrl.startsWith("[")
+                        ? JSON.parse(a.fotoUrl) : [a.fotoUrl];
+                      setPhotoAnswers((prev) => ({ ...prev, [pergunta.id]: uris }));
+                    } catch (_) {
+                      setPhotoAnswers((prev) => ({ ...prev, [pergunta.id]: [a.fotoUrl] }));
+                    }
+                  }
+                  break;
+              }
+              if (a.nota != null) setNotaAnswers((prev) => ({ ...prev, [pergunta.id]: a.nota }));
+            });
+            if (fd.fotos && typeof fd.fotos === "object") {
+              const next: Record<string, string[]> = {};
+              for (const [key, arr] of Object.entries(fd.fotos)) {
+                if (!Array.isArray(arr)) continue;
+                const uris = arr.map((x: any) => x?.uri).filter(Boolean);
+                if (!uris.length) continue;
+                if (key.startsWith("foto_anexada_")) {
+                  const pid = key.replace("foto_anexada_", "");
+                  next[`${pid}_anexo`] = uris;
+                } else if (key.startsWith("foto_")) {
+                  const pid = key.replace("foto_", "");
+                  next[pid] = uris;
+                }
+              }
+              if (Object.keys(next).length > 0) {
+                setPhotoAnswers((prev) => ({ ...prev, ...next }));
+              }
+            }
+            if (fd.lat != null && fd.lng != null) {
+              setLocalizacao({
+                coords: {
+                  latitude: fd.lat,
+                  longitude: fd.lng,
+                  accuracy: fd.accuracy ?? null,
+                  altitude: null,
+                  altitudeAccuracy: null,
+                  heading: null,
+                  speed: null,
+                },
+                timestamp: Date.now(),
+              } as Location.LocationObject);
+            }
+          } else {
+            if (r.observacoes) {
+              setObservacoes(r.observacoes);
+            }
+
+            // Carregar respostas do rascunho (API)
+            if (r.respostas && r.respostas.length > 0) {
+              r.respostas.forEach((resposta: any) => {
+              const todasPerguntas: any[] = [];
+              if (
+                data.escopo?.template?.grupos &&
+                Array.isArray(data.escopo.template.grupos)
+              ) {
+                data.escopo.template.grupos.forEach((g: any) => {
+                  if (g.perguntas && Array.isArray(g.perguntas)) {
+                    todasPerguntas.push(...g.perguntas);
+                  }
+                });
+              }
+              const pergunta = todasPerguntas.find(
+                (p) => p.id === resposta.perguntaId
+              );
+
+              if (!pergunta) {
+                return;
+              }
+
+              switch (pergunta.tipo) {
+                case "TEXTO":
+                  if (resposta.valorTexto) {
+                    setTextAnswers((prev) => ({
+                      ...prev,
+                      [pergunta.id]: resposta.valorTexto,
+                    }));
+                  }
+                  break;
+                case "BOOLEANO":
+                  if (
+                    resposta.valorBoolean !== null &&
+                    resposta.valorBoolean !== undefined
+                  ) {
+                    const valor = resposta.valorBoolean
+                      ? "CONFORME"
+                      : "NAO_CONFORME";
+                    setBooleanAnswers((prev) => ({
+                      ...prev,
+                      [pergunta.id]: valor,
+                    }));
+                  }
+                  if (resposta.observacao) {
+                    try {
+                      const partes = resposta.observacao.split("\n\n");
+                      if (partes.length >= 2) {
+                        const motivo = partes[0].replace("Motivo: ", "");
+                        const resolucao = partes[1].replace(
+                          "O que foi feito para resolver: ",
+                          ""
+                        );
+                        setNaoConformeDetails((prev) => ({
+                          ...prev,
+                          [pergunta.id]: { motivo, resolucao },
+                        }));
+                      }
+                    } catch (e) {
+                      console.error("Erro ao parsear observação:", e);
+                    }
+                  }
+                  if (resposta.fotoUrl) {
+                    try {
+                      const fotos =
+                        typeof resposta.fotoUrl === "string"
+                          ? resposta.fotoUrl.startsWith("[")
+                            ? JSON.parse(resposta.fotoUrl)
+                            : [resposta.fotoUrl]
+                          : [];
+                      setPhotoAnswers((prev) => ({
+                        ...prev,
+                        [`${pergunta.id}_anexo`]: fotos,
+                      }));
+                    } catch {
+                      setPhotoAnswers((prev) => ({
+                        ...prev,
+                        [`${pergunta.id}_anexo`]: [resposta.fotoUrl],
+                      }));
+                    }
+                  }
+                  break;
+                case "NUMERICO":
+                  if (
+                    resposta.valorNumero !== null &&
+                    resposta.valorNumero !== undefined
+                  ) {
+                    setNumericAnswers((prev) => ({
+                      ...prev,
+                      [pergunta.id]: resposta.valorNumero.toString(),
+                    }));
+                  }
+                  break;
+                case "SELECAO":
+                  if (resposta.valorOpcao) {
+                    setSelectAnswers((prev) => ({
+                      ...prev,
+                      [pergunta.id]: resposta.valorOpcao,
+                    }));
+                  }
+                  break;
+                case "FOTO":
+                  if (resposta.fotoUrl) {
+                    try {
+                      const fotos =
+                        typeof resposta.fotoUrl === "string"
+                          ? resposta.fotoUrl.startsWith("[")
+                            ? JSON.parse(resposta.fotoUrl)
+                            : [resposta.fotoUrl]
+                          : [];
+                      setPhotoAnswers((prev) => ({
+                        ...prev,
+                        [pergunta.id]: fotos,
+                      }));
+                    } catch {
+                      setPhotoAnswers((prev) => ({
+                        ...prev,
+                        [pergunta.id]: [resposta.fotoUrl],
+                      }));
+                    }
+                  }
+                  break;
+              }
+
+              if (resposta.nota !== null && resposta.nota !== undefined) {
+                setNotaAnswers((prev) => ({
+                  ...prev,
+                  [pergunta.id]: resposta.nota,
+                }));
+              }
+            });
+            }
+
+            // Obter localização (só ao restaurar da API)
+            if (r.lat && r.lng) {
+              setLocalizacao({
+                coords: {
+                  latitude: r.lat,
+                  longitude: r.lng,
+                  accuracy: r.accuracy || null,
+                  altitude: null,
+                  altitudeAccuracy: null,
+                  heading: null,
+                  speed: null,
+                },
+                timestamp: Date.now(),
+              } as Location.LocationObject);
+            }
+          }
+        } else {
+          // Criar rascunho inicial se não existir
+          const formData = new FormData();
+          formData.append("escopoId", data.escopo.id);
+          formData.append("isDraft", "true");
+          formData.append("answers", JSON.stringify([]));
+
+          const criarResponse = await api.post(
+            API_ENDPOINTS.CHECKLISTS_RESPONDER,
+            formData,
+            {
+              headers: {
+                "Content-Type": "multipart/form-data",
+              },
+            }
+          );
+
+          if (criarResponse.data?.resposta?.id) {
+            setRascunhoId(criarResponse.data.resposta.id);
+          }
+        }
+      } catch (rascunhoError) {
+        console.error("Erro ao carregar rascunho:", rascunhoError);
+        // Não bloquear o carregamento do escopo se o rascunho falhar
+      }
+    } catch (error: any) {
+      console.error("Erro ao carregar escopo:", error);
+      Alert.alert("Erro", "Não foi possível carregar o checklist.");
+      navigation.goBack();
+    } finally {
+      setLoading(false);
+      initialLoadDoneRef.current = true;
+    }
+  }, [escopoId, navigation]);
+
+  useEffect(() => {
+    carregarEscopo();
+    solicitarPermissoes();
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
+  }, [carregarEscopo, solicitarPermissoes]);
+
+  // Configurar sincronização offline
+  useEffect(() => {
+    // Carregar status inicial de sincronização
+    getSyncStatus().then(setSyncStatus);
+
+    // Configurar auto-sincronização
+    const unsubscribe = setupAutoSync((status) => {
+      setSyncStatus(status);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // O rascunho já é carregado dentro de carregarEscopo, então não precisamos de um useEffect separado
+  // Isso evita loops infinitos e re-renderizações desnecessárias
+
+  const selecionarFoto = useCallback(
+    async (perguntaId: string, permiteMultiplas: boolean) => {
+      try {
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          quality: 0.8,
+          allowsMultipleSelection: permiteMultiplas,
+        });
+
+        if (!result.canceled && result.assets) {
+          const fotos = result.assets.map((asset) => asset.uri);
+          if (permiteMultiplas) {
+            setPhotoAnswers((prev) => ({
+              ...prev,
+              [perguntaId]: [...(prev[perguntaId] || []), ...fotos],
+            }));
+          } else {
+            setPhotoAnswers((prev) => ({ ...prev, [perguntaId]: fotos }));
+          }
+        }
+      } catch (error) {
+        console.error("Erro ao selecionar foto:", error);
+        Alert.alert("Erro", "Não foi possível selecionar a foto.");
+      }
+    },
+    []
+  );
+
+  const tirarFoto = useCallback(
+    async (perguntaId: string, permiteMultiplas: boolean) => {
+      try {
+        // Verificar se está no simulador
+        const isSimulator = !Device.isDevice;
+
+        if (isSimulator) {
+          Alert.alert(
+            "Simulador",
+            "A câmera não está disponível no simulador. Por favor, teste em um dispositivo físico."
+          );
+          return;
+        }
+
+        // Verificar e solicitar permissão de câmera
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert(
+            "Permissão Necessária",
+            "É necessário permitir acesso à câmera para tirar fotos dos checklists. Vá em Configurações > KL Administração > Câmera e permita o acesso."
+          );
+          return;
+        }
+
+        const result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          quality: 0.8,
+          allowsMultipleSelection: false,
+        });
+
+        if (!result.canceled && result.assets[0]) {
+          const foto = result.assets[0].uri;
+          // Sempre adicionar foto (nunca substituir), permitindo múltiplas fotos
+          setPhotoAnswers((prev) => ({
+            ...prev,
+            [perguntaId]: [...(prev[perguntaId] || []), foto],
+          }));
+        }
+      } catch (error: any) {
+        console.error("Erro ao tirar foto:", error);
+        Alert.alert(
+          "Erro",
+          error?.message ||
+            "Não foi possível tirar a foto. Verifique se a câmera está disponível."
+        );
+      }
+    },
+    []
+  );
+
+  const prepararRespostas = useCallback((): Resposta[] => {
+    if (!escopo) return [];
+
+    const respostas: Resposta[] = [];
+    const grupos = escopo.escopo.template.grupos;
+
+    grupos.forEach((grupo) => {
+      grupo.perguntas.forEach((pergunta) => {
+        const resposta: Resposta = {
+          perguntaId: pergunta.id,
+          tipo: pergunta.tipo as PerguntaTipo,
+        };
+
+        switch (pergunta.tipo) {
+          case "TEXTO":
+            if (textAnswers[pergunta.id]) {
+              resposta.valorTexto = textAnswers[pergunta.id];
+            }
+            break;
+          case "BOOLEANO":
+            const boolVal = booleanAnswers[pergunta.id];
+            if (boolVal !== null && boolVal !== undefined) {
+              resposta.valorBoolean = boolVal === "CONFORME";
+
+              // Adicionar observação se não conforme
+              if (
+                boolVal === "NAO_CONFORME" &&
+                naoConformeDetails[pergunta.id]
+              ) {
+                resposta.valorTexto = `Motivo: ${
+                  naoConformeDetails[pergunta.id].motivo
+                }\n\nO que foi feito para resolver: ${
+                  naoConformeDetails[pergunta.id].resolucao
+                }`;
+              }
+            }
+            break;
+          case "NUMERICO":
+            if (numericAnswers[pergunta.id]) {
+              resposta.valorNumero = parseFloat(numericAnswers[pergunta.id]);
+            }
+            break;
+          case "SELECAO":
+            if (selectAnswers[pergunta.id]) {
+              resposta.valorOpcao = selectAnswers[pergunta.id];
+            }
+            break;
+          case "FOTO":
+            // Para fotos principais, verificar se são URLs já salvas ou locais
+            if (
+              photoAnswers[pergunta.id] &&
+              photoAnswers[pergunta.id].length > 0
+            ) {
+              // Se todas as fotos são URLs (já salvas), incluir no JSON
+              const todasSalvas = photoAnswers[pergunta.id].every(
+                (uri) => uri.startsWith("http://") || uri.startsWith("https://")
+              );
+              if (todasSalvas) {
+                resposta.fotoUrl = JSON.stringify(photoAnswers[pergunta.id]);
+              }
+              // Se são locais, serão enviadas via FormData e não precisam estar no JSON
+            }
+            break;
+        }
+
+        // Adicionar nota se existir (para qualquer tipo de pergunta)
+        if (
+          notaAnswers[pergunta.id] !== null &&
+          notaAnswers[pergunta.id] !== undefined
+        ) {
+          resposta.nota = notaAnswers[pergunta.id]!;
+        }
+
+        // Processar fotos anexadas (para todas as perguntas)
+        const fotosAnexadas = photoAnswers[`${pergunta.id}_anexo`] || [];
+        if (fotosAnexadas.length > 0) {
+          // Verificar se são URLs já salvas ou fotos locais
+          const todasSalvas = fotosAnexadas.every(
+            (uri) => uri.startsWith("http://") || uri.startsWith("https://")
+          );
+          if (todasSalvas) {
+            // Se todas são URLs, incluir no JSON
+            resposta.fotoUrl = JSON.stringify(fotosAnexadas);
+          }
+          // Se são locais, serão enviadas via FormData e não precisam estar no JSON
+          // Mas ainda precisamos incluir a resposta para que a API processe as fotos
+        }
+
+        // Só adicionar se tiver algum valor (incluindo fotos locais que serão enviadas via FormData)
+        const temFotosLocaisAnexadas = fotosAnexadas.some(
+          (uri) =>
+            uri.startsWith("file://") ||
+            uri.startsWith("content://") ||
+            uri.startsWith("/")
+        );
+        const temFotosLocaisPrincipais =
+          pergunta.tipo === "FOTO" &&
+          photoAnswers[pergunta.id]?.some(
+            (uri) =>
+              uri.startsWith("file://") ||
+              uri.startsWith("content://") ||
+              uri.startsWith("/")
+          );
+
+        // IMPORTANTE: Para rascunhos, sempre incluir a resposta se houver qualquer dado
+        // Isso garante que as respostas sejam salvas mesmo que não estejam "completas"
+        const temQualquerDado =
+          resposta.valorTexto ||
+          resposta.valorBoolean !== undefined ||
+          resposta.valorNumero !== undefined ||
+          resposta.valorOpcao ||
+          resposta.fotoUrl !== undefined ||
+          resposta.nota !== undefined ||
+          temFotosLocaisAnexadas ||
+          temFotosLocaisPrincipais;
+
+        if (temQualquerDado) {
+          respostas.push(resposta);
+          console.log(
+            `[prepararRespostas] ✅ Resposta adicionada - perguntaId: ${
+              pergunta.id
+            }, tipo: ${pergunta.tipo}, temValorBoolean: ${
+              resposta.valorBoolean !== undefined
+            }, valorBoolean: ${resposta.valorBoolean}, temNota: ${
+              resposta.nota !== undefined
+            }`
+          );
+        } else {
+          // Se não tem dados mas tem nota, incluir apenas a nota
+          if (resposta.nota !== undefined && resposta.nota !== null) {
+            respostas.push({
+              perguntaId: pergunta.id,
+              tipo: pergunta.tipo as PerguntaTipo,
+              nota: resposta.nota,
+            });
+            console.log(
+              `[prepararRespostas] ✅ Resposta adicionada apenas com nota - perguntaId: ${pergunta.id}, nota: ${resposta.nota}`
+            );
+          } else {
+            console.log(
+              `[prepararRespostas] ⚠️ Resposta NÃO adicionada - perguntaId: ${pergunta.id}, tipo: ${pergunta.tipo}, sem dados`
+            );
+          }
+        }
+      });
+    });
+
+    console.log(
+      `[prepararRespostas] 📊 Total de respostas preparadas: ${respostas.length}`,
+      {
+        respostas: respostas.map((r) => ({
+          perguntaId: r.perguntaId,
+          tipo: r.tipo,
+          temValorBoolean: r.valorBoolean !== undefined,
+          valorBoolean: r.valorBoolean,
+          temNota: r.nota !== undefined && r.nota !== null,
+          nota: r.nota,
+        })),
+      }
+    );
+
+    return respostas;
+  }, [
+    escopo,
+    textAnswers,
+    booleanAnswers,
+    numericAnswers,
+    selectAnswers,
+    photoAnswers,
+    notaAnswers,
+    naoConformeDetails,
+  ]);
+
+  const obterLocalizacao = useCallback(async () => {
+    try {
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+      setLocalizacao(loc);
+      return loc;
+    } catch (error) {
+      console.error("Erro ao obter localização:", error);
+      return null;
+    }
+  }, []);
+
+  const salvarRascunho = useCallback(
+    async (showToast = false) => {
+      if (!escopo || !rascunhoId) {
+        return;
+      }
+
+      try {
+        setSalvandoRascunho(true);
+
+        // Obter localização se não tiver
+        let loc = localizacao;
+        if (!loc) {
+          loc = await obterLocalizacao();
+        }
+
+        const respostas = prepararRespostas();
+
+        // Preparar dados para salvar (local ou remoto)
+        const draftData = {
+          observacoes: observacoes || "",
+          answers: respostas,
+          lat: loc?.coords.latitude,
+          lng: loc?.coords.longitude,
+          accuracy: loc?.coords.accuracy || 0,
+          fotos: {} as Record<string, any[]>,
+        };
+
+        // Preparar fotos para salvar (formato compatível com sincronização)
+        const grupos = escopo.escopo.template.grupos;
+        for (const grupo of grupos) {
+          for (const pergunta of grupo.perguntas) {
+            // Fotos principais (tipo FOTO)
+            if (pergunta.tipo === "FOTO" && photoAnswers[pergunta.id]) {
+              const fotos = photoAnswers[pergunta.id];
+              draftData.fotos[`foto_${pergunta.id}`] = fotos.map((fotoUri) => ({
+                uri: fotoUri,
+                type: "image/jpeg",
+                name: `foto_${pergunta.id}.jpg`,
+              }));
+            }
+            // Fotos anexadas
+            if (photoAnswers[`${pergunta.id}_anexo`]) {
+              const fotosAnexadas = photoAnswers[`${pergunta.id}_anexo`];
+              draftData.fotos[`foto_anexada_${pergunta.id}`] =
+                fotosAnexadas.map((fotoUri) => ({
+                  uri: fotoUri,
+                  type: "image/jpeg",
+                  name: `foto_anexada_${pergunta.id}.jpg`,
+                }));
+            }
+          }
+        }
+
+        // Verificar conectividade
+        const netInfo = await NetInfo.fetch();
+        const isOnline = netInfo.isConnected ?? false;
+
+        if (!isOnline) {
+          // Salvar localmente quando offline
+          await saveDraftLocally(escopo.escopo.id, rascunhoId, draftData);
+
+          // Atualizar status
+          const status = await getSyncStatus();
+          setSyncStatus(status);
+
+          if (showToast) {
+            Alert.alert(
+              "Rascunho Salvo Localmente",
+              "Você está offline. O rascunho será sincronizado automaticamente quando a conexão for restabelecida."
+            );
+          }
+          return;
+        }
+
+        // Tentar salvar no servidor quando online
+        const formData = new FormData();
+        formData.append("escopoId", escopo.escopo.id);
+        formData.append("respostaId", rascunhoId);
+        formData.append("isDraft", "true");
+
+        // Garantir que observacoes seja uma string válida
+        const observacoesValue =
+          observacoes && observacoes.trim() ? observacoes.trim() : "";
+        formData.append("observacoes", observacoesValue);
+
+        if (loc) {
+          formData.append("lat", String(loc.coords.latitude));
+          formData.append("lng", String(loc.coords.longitude));
+          formData.append("accuracy", String(loc.coords.accuracy || 0));
+        }
+
+        const answersJson = JSON.stringify(respostas);
+        formData.append("answers", answersJson);
+
+        // Coletar fotos, comprimir em paralelo e adicionar ao FormData (evita 413)
+        const photoEntries: { formKey: string; uri: string; type: string; name: string }[] = [];
+        for (const [key, fotos] of Object.entries(draftData.fotos)) {
+          if (Array.isArray(fotos)) {
+            fotos.forEach((foto: any, index: number) => {
+              if (
+                foto.uri &&
+                (foto.uri.startsWith("file://") ||
+                  foto.uri.startsWith("content://") ||
+                  foto.uri.startsWith("/"))
+              ) {
+                let formKey: string;
+                if (key.startsWith("foto_anexada_")) {
+                  const perguntaId = key.replace("foto_anexada_", "");
+                  formKey = `foto_anexada_${perguntaId}_${index}`;
+                } else {
+                  const perguntaId = key.replace("foto_", "");
+                  formKey = `foto_${perguntaId}_${index}`;
+                }
+                photoEntries.push({
+                  formKey,
+                  uri: foto.uri,
+                  type: foto.type || "image/jpeg",
+                  name: foto.name || `${formKey}.jpg`,
+                });
+              }
+            });
+          }
+        }
+        const compressed = await Promise.all(
+          photoEntries.map(async (e) => ({
+            ...e,
+            uri: (await compressImageForUpload(e.uri)).uri,
+          }))
+        );
+        for (const e of compressed) {
+          formData.append(e.formKey, {
+            uri: e.uri,
+            type: e.type,
+            name: e.name,
+          } as any);
+        }
+
+        // Obter token de autenticação
+        const token = await SecureStore.getItemAsync("authToken");
+
+        const headers: Record<string, string> = {
+          Accept: "application/json",
+        };
+
+        // Adicionar token de autenticação se existir
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
+
+        const response = await fetch(
+          `${API_URL}${API_ENDPOINTS.CHECKLISTS_RESPONDER}`,
+          {
+            method: "POST",
+            body: formData,
+            headers,
+          }
+        );
+
+        if (!response.ok) {
+          // Se falhar, salvar localmente como backup
+          const errorData = await response.json().catch(() => ({}));
+          console.error("Erro ao salvar rascunho no servidor:", errorData);
+
+          await saveDraftLocally(escopo.escopo.id, rascunhoId, draftData);
+          const status = await getSyncStatus();
+          setSyncStatus(status);
+
+          if (showToast) {
+            Alert.alert(
+              "Rascunho Salvo Localmente",
+              "Não foi possível salvar no servidor. O rascunho foi salvo localmente e será sincronizado automaticamente."
+            );
+          }
+          return;
+        }
+
+        const result = await response.json().catch(() => ({}));
+
+        // Atualizar rascunhoId se o backend retornar um novo ID
+        if (result.resposta?.id && result.resposta.id !== rascunhoId) {
+          setRascunhoId(result.resposta.id);
+        }
+
+        // Atualizar status de sincronização
+        const status = await getSyncStatus();
+        setSyncStatus(status);
+
+        if (showToast) {
+          Alert.alert("Sucesso", "Rascunho salvo com sucesso!");
+        }
+      } catch (error: any) {
+        console.error("Erro ao salvar rascunho:", error);
+
+        // Em caso de erro, tentar salvar localmente
+        try {
+          const respostas = prepararRespostas();
+          const draftData = {
+            observacoes,
+            answers: respostas,
+            lat: localizacao?.coords.latitude,
+            lng: localizacao?.coords.longitude,
+            accuracy: localizacao?.coords.accuracy || 0,
+            fotos: {} as Record<string, any[]>,
+          };
+
+          await saveDraftLocally(escopo!.escopo.id, rascunhoId, draftData);
+          const status = await getSyncStatus();
+          setSyncStatus(status);
+        } catch (localError) {
+          console.error("Erro ao salvar localmente:", localError);
+        }
+
+        if (showToast) {
+          Alert.alert(
+            "Aviso",
+            "Não foi possível salvar no servidor. O rascunho foi salvo localmente e será sincronizado quando a conexão for restabelecida."
+          );
+        }
+      } finally {
+        setSalvandoRascunho(false);
+      }
+    },
+    [
+      escopo,
+      rascunhoId,
+      textAnswers,
+      booleanAnswers,
+      numericAnswers,
+      selectAnswers,
+      photoAnswers,
+      notaAnswers,
+      observacoes,
+      localizacao,
+      naoConformeDetails,
+      obterLocalizacao,
+      prepararRespostas,
+    ]
+  );
+
+  // Auto-salvar rascunho após mudanças (só depois do carregamento inicial)
+  useEffect(() => {
+    if (!initialLoadDoneRef.current || !escopo || rascunhoId === null || salvandoRascunho) return;
+
+    // Verificar se há qualquer resposta ou foto
+    const hasAnyAnswer =
+      Object.keys(textAnswers).length > 0 ||
+      Object.keys(booleanAnswers).length > 0 ||
+      Object.keys(numericAnswers).length > 0 ||
+      Object.keys(selectAnswers).length > 0 ||
+      Object.keys(photoAnswers).length > 0 ||
+      Object.keys(notaAnswers).length > 0 ||
+      observacoes.trim().length > 0;
+
+    if (!hasAnyAnswer) return;
+
+    // Limpar timeout anterior
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+
+    // Auto-salvar após 2 segundos de inatividade
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      salvarRascunho(false).catch((error) => {
+        console.error("Erro no auto-save:", error);
+      });
+    }, 2000);
+
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
+  }, [
+    textAnswers,
+    booleanAnswers,
+    numericAnswers,
+    selectAnswers,
+    photoAnswers,
+    notaAnswers,
+    observacoes,
+    escopo,
+    rascunhoId,
+    salvandoRascunho,
+    salvarRascunho,
+  ]);
+
+  const validarPerguntasObrigatorias = useCallback((): boolean => {
+    if (!escopo) return false;
+
+    const grupos = escopo.escopo.template.grupos;
+    for (const grupo of grupos) {
+      for (const pergunta of grupo.perguntas) {
+        if (pergunta.obrigatoria) {
+          let temResposta = false;
+
+          switch (pergunta.tipo) {
+            case "TEXTO":
+              temResposta = !!textAnswers[pergunta.id]?.trim();
+              break;
+            case "BOOLEANO":
+              temResposta =
+                booleanAnswers[pergunta.id] !== null &&
+                booleanAnswers[pergunta.id] !== undefined;
+              break;
+            case "NUMERICO":
+              temResposta = !!numericAnswers[pergunta.id]?.trim();
+              break;
+            case "SELECAO":
+              temResposta = !!selectAnswers[pergunta.id];
+              break;
+            case "FOTO":
+              temResposta = !!(
+                photoAnswers[pergunta.id] &&
+                photoAnswers[pergunta.id].length > 0
+              );
+              break;
+          }
+
+          if (!temResposta) {
+            Alert.alert(
+              "Campo Obrigatório",
+              `A pergunta "${pergunta.titulo}" é obrigatória.`
+            );
+            return false;
+          }
+        }
+      }
+    }
+
+    return true;
+  }, [
+    escopo,
+    textAnswers,
+    booleanAnswers,
+    numericAnswers,
+    selectAnswers,
+    photoAnswers,
+  ]);
+
+  const finalizarChecklist = useCallback(() => {
+    if (!escopo || !rascunhoId) return;
+
+    if (!validarPerguntasObrigatorias()) {
+      return;
+    }
+
+    // Confirmar envio e abrir modal de assinaturas
+    Alert.alert(
+      "Finalizar Checklist",
+      "Tem certeza que deseja finalizar este checklist? Você precisará capturar a assinatura do gerente e sua selfie.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Continuar",
+          onPress: () => {
+            // Resetar estados de assinatura
+            setAssinaturaGerenteDataUrl(null);
+            setSelfieSupervisorUri(null);
+            setAssinaturaStep("gerente");
+            setShowAssinaturaModal(true);
+          },
+        },
+      ]
+    );
+  }, [escopo, rascunhoId, validarPerguntasObrigatorias]);
+
+  const handleAssinaturaGerenteOK = useCallback((signature: string) => {
+    setAssinaturaGerenteDataUrl(signature);
+    setAssinaturaStep("supervisor");
+  }, []);
+
+  const capturarSelfieSupervisor = useCallback(async () => {
+    try {
+      const isSimulator = !Device.isDevice;
+
+      if (isSimulator) {
+        Alert.alert(
+          "Simulador",
+          "A câmera não está disponível no simulador. Por favor, teste em um dispositivo físico."
+        );
+        return;
+      }
+
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Permissão Necessária",
+          "É necessário permitir acesso à câmera para tirar sua selfie."
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+        aspect: [1, 1], // Selfie quadrada
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setSelfieSupervisorUri(result.assets[0].uri);
+      }
+    } catch (error: any) {
+      console.error("Erro ao capturar selfie:", error);
+      Alert.alert("Erro", "Não foi possível capturar sua selfie.");
+    }
+  }, []);
+
+  const finalizarChecklistComAssinaturas = useCallback(async () => {
+    if (!escopo || !rascunhoId) return;
+    if (!assinaturaGerenteDataUrl || !selfieSupervisorUri) {
+      Alert.alert(
+        "Atenção",
+        "Por favor, capture a assinatura do gerente e sua selfie antes de finalizar."
+      );
+      return;
+    }
+
+    try {
+      setEnviando(true);
+
+      // Obter localização se não tiver
+      let loc = localizacao;
+      if (!loc) {
+        loc = await obterLocalizacao();
+      }
+
+      const formData = new FormData();
+      formData.append("escopoId", escopo.escopo.id);
+      formData.append("respostaId", rascunhoId);
+      formData.append("isDraft", "false");
+      formData.append("observacoes", observacoes);
+
+      if (loc) {
+        formData.append("lat", String(loc.coords.latitude));
+        formData.append("lng", String(loc.coords.longitude));
+        formData.append("accuracy", String(loc.coords.accuracy || 0));
+      }
+
+      const respostas = prepararRespostas();
+
+      console.log("📋 Finalizando checklist - Respostas preparadas:", {
+        totalRespostas: respostas.length,
+        respostas: respostas.map((r) => ({
+          perguntaId: r.perguntaId,
+          tipo: r.tipo,
+          temValorTexto: !!r.valorTexto,
+          temValorBoolean: r.valorBoolean !== undefined,
+          valorBoolean: r.valorBoolean,
+          temValorNumero: r.valorNumero !== undefined,
+          temValorOpcao: !!r.valorOpcao,
+          temNota: r.nota !== undefined && r.nota !== null,
+          nota: r.nota,
+        })),
+      });
+
+      formData.append("answers", JSON.stringify(respostas));
+
+      // Comprimir assinatura e selfie para reduzir payload (evita 413)
+      const [compressedAssinatura, compressedSelfieUri] = await Promise.all([
+        assinaturaGerenteDataUrl
+          ? compressDataUrlToDataUrl(assinaturaGerenteDataUrl)
+          : Promise.resolve(null),
+        selfieSupervisorUri
+          ? compressImageForUpload(selfieSupervisorUri).then((r) => r.uri)
+          : Promise.resolve(null),
+      ]);
+      if (compressedAssinatura) {
+        formData.append("assinaturaGerenteDataUrl", compressedAssinatura);
+      }
+      if (compressedSelfieUri) {
+        formData.append("assinaturaFoto", {
+          uri: compressedSelfieUri,
+          type: "image/jpeg",
+          name: "selfie-supervisor.jpg",
+        } as any);
+      }
+
+      // Coletar fotos, comprimir em paralelo e adicionar ao FormData (evita 413)
+      const photoEntries: {
+        formKey: string;
+        uri: string;
+        name: string;
+      }[] = [];
+      const grupos = escopo.escopo.template.grupos;
+      for (const grupo of grupos) {
+        for (const pergunta of grupo.perguntas) {
+          if (pergunta.tipo === "FOTO" && photoAnswers[pergunta.id]) {
+            const fotos = photoAnswers[pergunta.id];
+            const permiteMultiplas = pergunta.permiteMultiplasFotos ?? false;
+            fotos.forEach((fotoUri: string, index: number) => {
+              if (
+                fotoUri.startsWith("file://") ||
+                fotoUri.startsWith("content://") ||
+                fotoUri.startsWith("/")
+              ) {
+                const formKey = permiteMultiplas
+                  ? `foto_${pergunta.id}_${index}`
+                  : `foto_${pergunta.id}`;
+                photoEntries.push({
+                  formKey,
+                  uri: fotoUri,
+                  name: permiteMultiplas
+                    ? `foto_${pergunta.id}_${index}.jpg`
+                    : `foto_${pergunta.id}.jpg`,
+                });
+              }
+            });
+          }
+          if (photoAnswers[`${pergunta.id}_anexo`]) {
+            const fotosAnexadas = photoAnswers[`${pergunta.id}_anexo`];
+            fotosAnexadas.forEach((fotoUri: string, index: number) => {
+              if (
+                fotoUri.startsWith("file://") ||
+                fotoUri.startsWith("content://") ||
+                fotoUri.startsWith("/")
+              ) {
+                photoEntries.push({
+                  formKey: `foto_anexada_${pergunta.id}_${index}`,
+                  uri: fotoUri,
+                  name: `foto_anexada_${pergunta.id}_${index}.jpg`,
+                });
+              }
+            });
+          }
+        }
+      }
+      const compressedPhotos = await Promise.all(
+        photoEntries.map(async (e) => ({
+          ...e,
+          uri: (await compressImageForUpload(e.uri)).uri,
+        }))
+      );
+      for (const e of compressedPhotos) {
+        formData.append(e.formKey, {
+          uri: e.uri,
+          type: "image/jpeg",
+          name: e.name,
+        } as any);
+      }
+
+      // Obter token de autenticação
+      const token = await SecureStore.getItemAsync("authToken");
+
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+      };
+
+      // Adicionar token de autenticação se existir
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(
+        `${API_URL}${API_ENDPOINTS.CHECKLISTS_RESPONDER}`,
+        {
+          method: "POST",
+          body: formData,
+          headers,
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("❌ Erro ao finalizar checklist:", {
+          status: response.status,
+          statusText: response.statusText,
+          errorData,
+        });
+        throw new Error(
+          errorData.error || errorData.message || "Erro ao finalizar checklist"
+        );
+      }
+
+      Alert.alert("Sucesso", "Checklist finalizado com sucesso!", [
+        {
+          text: "OK",
+          onPress: () => {
+            // Evitar crash no iOS: deferir fechamento do modal e navegação
+            // até o Alert ter sido totalmente dispensado.
+            setTimeout(() => {
+              try {
+                setShowAssinaturaModal(false);
+                navigation.goBack();
+              } catch (e) {
+                if (__DEV__) console.warn("Erro ao fechar após sucesso:", e);
+              }
+            }, 150);
+          },
+        },
+      ]);
+    } catch (error: any) {
+      console.error("Erro ao finalizar checklist:", error);
+      Alert.alert(
+        "Erro",
+        error?.message ||
+          "Não foi possível finalizar o checklist. Verifique sua conexão e tente novamente."
+      );
+    } finally {
+      setEnviando(false);
+    }
+  }, [
+    escopo,
+    rascunhoId,
+    observacoes,
+    localizacao,
+    photoAnswers,
+    notaAnswers,
+    naoConformeDetails,
+    assinaturaGerenteDataUrl,
+    selfieSupervisorUri,
+    obterLocalizacao,
+    prepararRespostas,
+    navigation,
+  ]);
+
+  // Early return se estiver carregando ou não tiver escopo
+  if (loading || !escopo) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#009ee2" />
+        <Text style={styles.loadingText}>Carregando checklist...</Text>
+      </View>
+    );
+  }
+
+  const gruposOrdenados = [...escopo.escopo.template.grupos].sort(
+    (a, b) => a.ordem - b.ordem
+  );
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      enabled={Boolean(Platform.OS === "ios")}
+    >
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backButton}
+        >
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        <View style={styles.headerContent}>
+          <Text style={styles.headerTitle} numberOfLines={2}>
+            {escopo.escopo.template.titulo}
+          </Text>
+          {escopo.escopo.unidade && (
+            <Text style={styles.headerSubtitle}>
+              {escopo.escopo.unidade.nome}
+            </Text>
+          )}
+        </View>
+        <View style={styles.headerRight}>
+          {/* Indicador de status de sincronização */}
+          {!syncStatus.isOnline && (
+            <View style={styles.offlineIndicator}>
+              <Ionicons name="cloud-offline-outline" size={18} color="#fff" />
+              <Text style={styles.offlineText}>Offline</Text>
+            </View>
+          )}
+          {syncStatus.isOnline && syncStatus.pendingSyncs > 0 && (
+            <TouchableOpacity
+              style={styles.syncButton}
+              onPress={async () => {
+                setSyncStatus((prev) => ({ ...prev, isSyncing: true }));
+                const result = await syncAllPendingDrafts();
+                const newStatus = await getSyncStatus();
+                setSyncStatus(newStatus);
+                if (result.success > 0) {
+                  Alert.alert(
+                    "Sucesso",
+                    `${result.success} rascunho(s) sincronizado(s) com sucesso!`
+                  );
+                }
+              }}
+            >
+              <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
+              <Text style={styles.syncText}>{syncStatus.pendingSyncs}</Text>
+            </TouchableOpacity>
+          )}
+          {salvandoRascunho && (
+            <View style={styles.savingIndicator}>
+              <ActivityIndicator size="small" color="#fff" />
+            </View>
+          )}
+        </View>
+      </View>
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        {gruposOrdenados.map((grupo) => (
+          <View key={grupo.id} style={styles.grupoContainer}>
+            <Text style={styles.grupoTitulo}>{grupo.titulo}</Text>
+            {grupo.descricao && (
+              <Text style={styles.grupoDescricao}>{grupo.descricao}</Text>
+            )}
+
+            {grupo.perguntas
+              .sort((a, b) => a.ordem - b.ordem)
+              .map((pergunta) => (
+                <View key={pergunta.id} style={styles.perguntaContainer}>
+                  <View style={styles.perguntaHeader}>
+                    <Text style={styles.perguntaTitulo}>
+                      {pergunta.titulo}
+                      {pergunta.obrigatoria && (
+                        <Text style={styles.obrigatorio}> *</Text>
+                      )}
+                    </Text>
+                    {pergunta.descricao && (
+                      <Text style={styles.perguntaDescricao}>
+                        {pergunta.descricao}
+                      </Text>
+                    )}
+                  </View>
+
+                  {/* Renderizar input baseado no tipo */}
+                  {pergunta.tipo === "TEXTO" && (
+                    <>
+                      <TextInput
+                        style={styles.textInput}
+                        value={textAnswers[pergunta.id] || ""}
+                        onChangeText={(text) =>
+                          setTextAnswers((prev) => ({
+                            ...prev,
+                            [pergunta.id]: text,
+                          }))
+                        }
+                        placeholder="Digite sua resposta..."
+                        multiline={true}
+                        numberOfLines={4}
+                      />
+                    </>
+                  )}
+
+                  {pergunta.tipo === "BOOLEANO" && (
+                    <View style={styles.booleanContainer}>
+                      {(
+                        ["CONFORME", "NAO_CONFORME", "NAO_APLICA"] as const
+                      ).map((opcao) => (
+                        <TouchableOpacity
+                          key={opcao}
+                          style={[
+                            styles.booleanButton,
+                            booleanAnswers[pergunta.id] === opcao
+                              ? styles.booleanButtonSelected
+                              : null,
+                            { marginRight: 8, marginBottom: 8 },
+                          ]}
+                          onPress={() => {
+                            console.log(
+                              `[BOOLEANO] Selecionando opção: ${opcao} para pergunta: ${pergunta.id} (${pergunta.titulo})`
+                            );
+                            setBooleanAnswers((prev) => ({
+                              ...prev,
+                              [pergunta.id]: opcao,
+                            }));
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.booleanButtonText,
+                              booleanAnswers[pergunta.id] === opcao
+                                ? styles.booleanButtonTextSelected
+                                : null,
+                            ]}
+                          >
+                            {opcao === "CONFORME"
+                              ? "Conforme"
+                              : opcao === "NAO_CONFORME"
+                              ? "Não Conforme"
+                              : "Não Aplica"}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+
+                  {pergunta.tipo === "NUMERICO" && (
+                    <TextInput
+                      style={styles.textInput}
+                      value={numericAnswers[pergunta.id] || ""}
+                      onChangeText={(text) => {
+                        const numericValue = text.replace(/[^0-9.,]/g, "");
+                        setNumericAnswers((prev) => ({
+                          ...prev,
+                          [pergunta.id]: numericValue,
+                        }));
+                      }}
+                      placeholder="Digite um número..."
+                      keyboardType="numeric"
+                    />
+                  )}
+
+                  {pergunta.tipo === "SELECAO" && (
+                    <View style={styles.selectContainer}>
+                      {pergunta.opcoes.map((opcao) => (
+                        <TouchableOpacity
+                          key={opcao}
+                          style={[
+                            styles.selectButton,
+                            selectAnswers[pergunta.id] === opcao
+                              ? styles.selectButtonSelected
+                              : null,
+                            { marginBottom: 8 },
+                          ]}
+                          onPress={() =>
+                            setSelectAnswers((prev) => ({
+                              ...prev,
+                              [pergunta.id]: opcao,
+                            }))
+                          }
+                        >
+                          <Text
+                            style={[
+                              styles.selectButtonText,
+                              selectAnswers[pergunta.id] === opcao
+                                ? styles.selectButtonTextSelected
+                                : null,
+                            ]}
+                          >
+                            {opcao}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+
+                  {/* Sistema de Avaliação 1-5 - Mostrar em TODAS as perguntas */}
+                  <View style={styles.avaliacaoContainer}>
+                    <Text style={styles.avaliacaoLabel}>
+                      Avaliação {pergunta.peso ? `(Peso ${pergunta.peso})` : ""}
+                    </Text>
+                    <Text style={styles.avaliacaoSubtitle}>
+                      Selecione a nota que melhor representa a situação
+                    </Text>
+                    <View style={styles.avaliacaoButtons}>
+                      {[1, 2, 3, 4, 5].map((nota) => {
+                        const cores = {
+                          1: "#f44336", // Vermelho - Péssimo
+                          2: "#FF9800", // Laranja - Ruim
+                          3: "#FFC107", // Amarelo - Regular
+                          4: "#4CAF50", // Verde - Bom
+                          5: "#8BC34A", // Verde claro - Ótimo
+                        };
+                        const labels = {
+                          1: "Péssimo",
+                          2: "Ruim",
+                          3: "Regular",
+                          4: "Bom",
+                          5: "Ótimo",
+                        };
+                        const isSelected = notaAnswers[pergunta.id] === nota;
+                        return (
+                          <TouchableOpacity
+                            key={nota}
+                            style={[
+                              styles.avaliacaoButton,
+                              isSelected && styles.avaliacaoButtonSelected,
+                              {
+                                borderColor: cores[nota as keyof typeof cores],
+                              },
+                              isSelected && {
+                                backgroundColor:
+                                  cores[nota as keyof typeof cores] + "20",
+                              },
+                            ]}
+                            onPress={() =>
+                              setNotaAnswers((prev) => ({
+                                ...prev,
+                                [pergunta.id]: isSelected ? null : nota,
+                              }))
+                            }
+                          >
+                            <View
+                              style={[
+                                styles.avaliacaoDot,
+                                {
+                                  backgroundColor:
+                                    cores[nota as keyof typeof cores],
+                                },
+                              ]}
+                            />
+                            <Text
+                              style={[
+                                styles.avaliacaoButtonText,
+                                isSelected &&
+                                  styles.avaliacaoButtonTextSelected,
+                              ]}
+                            >
+                              {nota} - {labels[nota as keyof typeof labels]}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                    {notaAnswers[pergunta.id] && (
+                      <Text style={styles.avaliacaoSelected}>
+                        Nota selecionada: {notaAnswers[pergunta.id]}
+                      </Text>
+                    )}
+                  </View>
+
+                  {/* Campo para anexar foto em perguntas que NÃO são do tipo FOTO */}
+                  {/* Se a pergunta já é do tipo FOTO, não mostrar o campo de anexo separado */}
+                  {pergunta.tipo !== "FOTO" && (
+                    <View style={styles.anexoFotoContainer}>
+                      <Text style={styles.anexoFotoLabel}>
+                        Anexar foto (opcional)
+                      </Text>
+                      <Text style={styles.anexoFotoSubtitle}>
+                        Você pode anexar uma foto como evidência adicional para
+                        esta pergunta
+                      </Text>
+                      {photoAnswers[`${pergunta.id}_anexo`]?.map(
+                        (uri, index) => (
+                          <View key={index} style={styles.photoPreview}>
+                            <Image source={{ uri }} style={styles.photoImage} />
+                            <TouchableOpacity
+                              style={styles.removePhotoButton}
+                              onPress={() => {
+                                const novasFotos = [
+                                  ...(photoAnswers[`${pergunta.id}_anexo`] ||
+                                    []),
+                                ];
+                                novasFotos.splice(index, 1);
+                                setPhotoAnswers((prev) => {
+                                  const newState = { ...prev };
+                                  if (novasFotos.length > 0) {
+                                    newState[`${pergunta.id}_anexo`] =
+                                      novasFotos;
+                                  } else {
+                                    delete newState[`${pergunta.id}_anexo`];
+                                  }
+                                  return newState;
+                                });
+                              }}
+                            >
+                              <Ionicons
+                                name="close-circle"
+                                size={24}
+                                color="#f44336"
+                              />
+                            </TouchableOpacity>
+                          </View>
+                        )
+                      )}
+                      <View style={styles.photoButtons}>
+                        <TouchableOpacity
+                          style={styles.photoButton}
+                          onPress={() =>
+                            tirarFoto(`${pergunta.id}_anexo`, true)
+                          }
+                        >
+                          <Ionicons
+                            name="camera-outline"
+                            size={20}
+                            color="#009ee2"
+                          />
+                          <Text style={styles.photoButtonText}>Tirar Foto</Text>
+                        </TouchableOpacity>
+                      </View>
+                      {photoAnswers[`${pergunta.id}_anexo`]?.length > 0 && (
+                        <Text style={styles.photoCount}>
+                          {photoAnswers[`${pergunta.id}_anexo`].length} foto(s)
+                          adicionada(s)
+                        </Text>
+                      )}
+                    </View>
+                  )}
+
+                  {pergunta.tipo === "FOTO" && (
+                    <View style={styles.photoContainer}>
+                      {photoAnswers[pergunta.id]?.map((uri, index) => (
+                        <View key={index} style={styles.photoPreview}>
+                          <Image source={{ uri }} style={styles.photoImage} />
+                          <TouchableOpacity
+                            style={styles.removePhotoButton}
+                            onPress={() => {
+                              const novasFotos = [
+                                ...(photoAnswers[pergunta.id] || []),
+                              ];
+                              novasFotos.splice(index, 1);
+                              setPhotoAnswers((prev) => ({
+                                ...prev,
+                                [pergunta.id]: novasFotos,
+                              }));
+                            }}
+                          >
+                            <Ionicons
+                              name="close-circle"
+                              size={24}
+                              color="#f44336"
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                      <View style={styles.photoButtons}>
+                        <TouchableOpacity
+                          style={styles.photoButton}
+                          onPress={() => tirarFoto(pergunta.id, true)}
+                        >
+                          <Ionicons
+                            name="camera-outline"
+                            size={20}
+                            color="#009ee2"
+                          />
+                          <Text style={styles.photoButtonText}>Tirar Foto</Text>
+                        </TouchableOpacity>
+                      </View>
+                      {photoAnswers[pergunta.id]?.length > 0 && (
+                        <Text style={styles.photoCount}>
+                          {photoAnswers[pergunta.id].length} foto(s)
+                          adicionada(s)
+                        </Text>
+                      )}
+                    </View>
+                  )}
+
+                  {/* Detalhes de não conformidade */}
+                  {pergunta.tipo === "BOOLEANO" &&
+                    booleanAnswers[pergunta.id] === "NAO_CONFORME" && (
+                      <View style={styles.naoConformeContainer}>
+                        <Text style={styles.naoConformeLabel}>
+                          Motivo da não conformidade:
+                        </Text>
+                        <TextInput
+                          style={styles.textInput}
+                          value={naoConformeDetails[pergunta.id]?.motivo || ""}
+                          onChangeText={(text) =>
+                            setNaoConformeDetails((prev) => ({
+                              ...prev,
+                              [pergunta.id]: {
+                                motivo: text,
+                                resolucao: prev[pergunta.id]?.resolucao || "",
+                              },
+                            }))
+                          }
+                          placeholder="Descreva o motivo..."
+                          multiline={true}
+                        />
+                        <Text style={styles.naoConformeLabel}>
+                          O que foi feito para resolver:
+                        </Text>
+                        <TextInput
+                          style={styles.textInput}
+                          value={
+                            naoConformeDetails[pergunta.id]?.resolucao || ""
+                          }
+                          onChangeText={(text) =>
+                            setNaoConformeDetails((prev) => ({
+                              ...prev,
+                              [pergunta.id]: {
+                                motivo: prev[pergunta.id]?.motivo || "",
+                                resolucao: text,
+                              },
+                            }))
+                          }
+                          placeholder="Descreva a resolução..."
+                          multiline={true}
+                        />
+                      </View>
+                    )}
+                </View>
+              ))}
+          </View>
+        ))}
+
+        {/* Observações Gerais */}
+        <View style={styles.observacoesContainer}>
+          <Text style={styles.observacoesLabel}>
+            Observações Gerais (opcional)
+          </Text>
+          <TextInput
+            style={[styles.textInput, styles.observacoesInput]}
+            value={observacoes}
+            onChangeText={setObservacoes}
+            placeholder="Adicione observações gerais sobre este checklist..."
+            multiline={true}
+            numberOfLines={6}
+          />
+        </View>
+      </ScrollView>
+
+      {/* Footer com botões */}
+      <View
+        style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}
+      >
+        <TouchableOpacity
+          style={[styles.footerButton, styles.saveButton]}
+          onPress={async () => {
+            // Limpar timeout do auto-save para salvar imediatamente
+            if (autoSaveTimeoutRef.current) {
+              clearTimeout(autoSaveTimeoutRef.current);
+            }
+            await salvarRascunho(true);
+          }}
+          disabled={salvandoRascunho}
+        >
+          {salvandoRascunho ? (
+            <>
+              <ActivityIndicator color="#009ee2" size="small" />
+              <Text
+                style={[
+                  styles.footerButtonText,
+                  styles.saveButtonText,
+                  { marginLeft: 8 },
+                ]}
+              >
+                Salvando...
+              </Text>
+            </>
+          ) : (
+            <>
+              <Ionicons name="save-outline" size={20} color="#009ee2" />
+              <Text style={[styles.footerButtonText, styles.saveButtonText]}>
+                Salvar Rascunho
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.footerButton, styles.submitButton]}
+          onPress={finalizarChecklist}
+          disabled={enviando}
+        >
+          {enviando ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="checkmark-circle" size={20} color="#fff" />
+              <Text style={[styles.footerButtonText, styles.submitButtonText]}>
+                Finalizar
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {/* Modal de Assinaturas */}
+      <Modal
+        visible={showAssinaturaModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowAssinaturaModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>
+              {assinaturaStep === "gerente"
+                ? "Assinatura do Gerente"
+                : "Selfie do Supervisor"}
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                setShowAssinaturaModal(false);
+                setAssinaturaGerenteDataUrl(null);
+                setSelfieSupervisorUri(null);
+                setAssinaturaStep("gerente");
+                if (signatureRef.current) {
+                  signatureRef.current.clearSignature();
+                }
+              }}
+              style={styles.modalCloseButton}
+            >
+              <Ionicons name="close" size={24} color="#666" />
+            </TouchableOpacity>
+          </View>
+
+          {assinaturaStep === "gerente" ? (
+            <View style={styles.modalContentFixed}>
+              <View style={styles.assinaturaStepContainer}>
+                <Text style={styles.assinaturaStepTitle}>
+                  Assinatura do Gerente
+                </Text>
+                <Text style={styles.assinaturaStepDescription}>
+                  Entregue o celular para o gerente assinar na tela abaixo com o
+                  dedo para confirmar a visualização deste relatório.
+                </Text>
+
+                <View style={styles.signatureContainer}>
+                  <SignatureCanvas
+                    ref={signatureRef}
+                    onOK={handleAssinaturaGerenteOK}
+                    descriptionText="Assine na área abaixo"
+                    clearText="Limpar"
+                    confirmText="Confirmar"
+                    webStyle={`
+                      .m-signature-pad {
+                        box-shadow: none;
+                        border: none;
+                        border-radius: 8px;
+                        width: 100%;
+                        height: 100%;
+                      }
+                      .m-signature-pad--body {
+                        border: none;
+                        height: calc(100% - 60px);
+                      }
+                      .m-signature-pad--body canvas {
+                        border-radius: 8px;
+                        width: 100%;
+                        height: 100%;
+                      }
+                      .m-signature-pad--footer {
+                        display: flex;
+                        justify-content: space-between;
+                        padding: 10px;
+                        gap: 10px;
+                      }
+                      .button {
+                        background-color: #007AFF;
+                        color: white;
+                        border-radius: 6px;
+                        padding: 12px 24px;
+                        font-size: 16px;
+                        font-weight: 600;
+                        border: none;
+                        cursor: pointer;
+                        flex: 1;
+                      }
+                      .button.clear {
+                        background-color: #FF3B30;
+                      }
+                      .button.save {
+                        background-color: #4CAF50;
+                      }
+                    `}
+                    autoClear={false}
+                    imageType="image/png"
+                  />
+                </View>
+              </View>
+            </View>
+          ) : (
+            <ScrollView
+              style={styles.modalContent}
+              contentContainerStyle={styles.modalContentContainer}
+            >
+              <View style={styles.assinaturaStepContainer}>
+                <Text style={styles.assinaturaStepTitle}>
+                  Capture sua selfie
+                </Text>
+                <Text style={styles.assinaturaStepDescription}>
+                  Tire uma selfie para comprovar que você é o responsável pela
+                  finalização deste checklist.
+                </Text>
+
+                {selfieSupervisorUri ? (
+                  <View style={styles.photoPreviewContainer}>
+                    <Image
+                      source={{ uri: selfieSupervisorUri }}
+                      style={styles.assinaturaPreview}
+                    />
+                    <TouchableOpacity
+                      style={styles.retakeButton}
+                      onPress={() => setSelfieSupervisorUri(null)}
+                    >
+                      <Ionicons name="refresh" size={20} color="#fff" />
+                      <Text style={styles.retakeButtonText}>Refazer</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.continueButton, styles.finalizeButton]}
+                      onPress={finalizarChecklistComAssinaturas}
+                      disabled={enviando}
+                    >
+                      {enviando ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <>
+                          <Text style={styles.continueButtonText}>
+                            Finalizar Checklist
+                          </Text>
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={20}
+                            color="#fff"
+                          />
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.captureButton}
+                    onPress={capturarSelfieSupervisor}
+                  >
+                    <Ionicons name="camera" size={32} color="#fff" />
+                    <Text style={styles.captureButtonText}>Tirar Selfie</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </ScrollView>
+          )}
+        </View>
+      </Modal>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#f5f5f5",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#fff",
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: "#666",
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#009ee2",
+    paddingTop: 50,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  headerContent: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#fff",
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: "rgba(255, 255, 255, 0.9)",
+    marginTop: 2,
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  offlineIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 152, 0, 0.3)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  offlineText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  syncButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(76, 175, 80, 0.3)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  syncText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  savingIndicator: {
+    marginLeft: 8,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 100,
+  },
+  grupoContainer: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  grupoTitulo: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 8,
+  },
+  grupoDescricao: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 16,
+  },
+  perguntaContainer: {
+    marginBottom: 24,
+    paddingBottom: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e0e0e0",
+  },
+  perguntaHeader: {
+    marginBottom: 12,
+  },
+  perguntaTitulo: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 4,
+  },
+  obrigatorio: {
+    color: "#f44336",
+  },
+  perguntaDescricao: {
+    fontSize: 14,
+    color: "#666",
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: "#333",
+    backgroundColor: "#fff",
+    minHeight: 44,
+  },
+  booleanContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  booleanButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: "#e0e0e0",
+    backgroundColor: "#fff",
+  },
+  booleanButtonSelected: {
+    borderColor: "#009ee2",
+    backgroundColor: "#e8f5ff",
+  },
+  booleanButtonText: {
+    fontSize: 14,
+    color: "#666",
+    fontWeight: "500",
+  },
+  booleanButtonTextSelected: {
+    color: "#009ee2",
+    fontWeight: "600",
+  },
+  selectContainer: {
+    // gap substituído por marginBottom nos filhos
+  },
+  selectButton: {
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    backgroundColor: "#fff",
+  },
+  selectButtonSelected: {
+    borderColor: "#009ee2",
+    backgroundColor: "#e8f5ff",
+  },
+  selectButtonText: {
+    fontSize: 14,
+    color: "#666",
+  },
+  selectButtonTextSelected: {
+    color: "#009ee2",
+    fontWeight: "600",
+  },
+  photoContainer: {
+    // gap substituído por marginBottom nos filhos
+  },
+  photoPreview: {
+    position: "relative",
+    width: "100%",
+    height: 200,
+    borderRadius: 8,
+    overflow: "hidden",
+    marginBottom: 12,
+  },
+  photoImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
+  },
+  removePhotoButton: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    borderRadius: 12,
+  },
+  photoButtons: {
+    flexDirection: "row",
+  },
+  photoButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#009ee2",
+    backgroundColor: "#fff",
+  },
+  photoButtonText: {
+    fontSize: 14,
+    color: "#009ee2",
+    fontWeight: "600",
+    marginLeft: 8,
+  },
+  photoCount: {
+    fontSize: 12,
+    color: "#666",
+    marginLeft: 12,
+    alignSelf: "center",
+    fontStyle: "italic",
+  },
+  naoConformeContainer: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: "#fff3cd",
+    borderRadius: 8,
+  },
+  naoConformeLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#856404",
+    marginBottom: 8,
+    marginTop: 8,
+  },
+  observacoesContainer: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  observacoesLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 8,
+  },
+  observacoesInput: {
+    minHeight: 120,
+    textAlignVertical: "top",
+  },
+  avaliacaoContainer: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: "#f8f9fa",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+  },
+  avaliacaoLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 4,
+  },
+  avaliacaoSubtitle: {
+    fontSize: 12,
+    color: "#666",
+    marginBottom: 12,
+  },
+  avaliacaoButtons: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginTop: 8,
+  },
+  avaliacaoButton: {
+    flex: 1,
+    minWidth: "48%",
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    marginRight: 8,
+    marginBottom: 8,
+    borderRadius: 8,
+    borderWidth: 2,
+    backgroundColor: "#fff",
+  },
+  avaliacaoButtonSelected: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  avaliacaoDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  avaliacaoButtonText: {
+    fontSize: 13,
+    color: "#666",
+    fontWeight: "500",
+  },
+  avaliacaoButtonTextSelected: {
+    color: "#333",
+    fontWeight: "600",
+  },
+  avaliacaoSelected: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 8,
+    fontStyle: "italic",
+  },
+  anexoFotoContainer: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: "#f8f9fa",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+  },
+  anexoFotoLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 4,
+  },
+  anexoFotoSubtitle: {
+    fontSize: 12,
+    color: "#666",
+    marginBottom: 12,
+  },
+  footer: {
+    flexDirection: "row",
+    padding: 16,
+    paddingBottom: 16,
+    backgroundColor: "#fff",
+    borderTopWidth: 1,
+    borderTopColor: "#e0e0e0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  footerButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 14,
+    borderRadius: 12,
+    marginRight: 12,
+  },
+  saveButton: {
+    borderWidth: 2,
+    borderColor: "#009ee2",
+    backgroundColor: "#fff",
+  },
+  saveButtonText: {
+    color: "#009ee2",
+    fontWeight: "600",
+  },
+  submitButton: {
+    backgroundColor: "#009ee2",
+  },
+  submitButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+  },
+  footerButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginLeft: 8,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    paddingTop: 50,
+    backgroundColor: "#009ee2",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e0e0e0",
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  modalContent: {
+    flex: 1,
+  },
+  modalContentFixed: {
+    flex: 1,
+    padding: 20,
+    justifyContent: "center",
+  },
+  modalContentContainer: {
+    padding: 20,
+  },
+  assinaturaStepContainer: {
+    alignItems: "center",
+  },
+  assinaturaStepTitle: {
+    fontSize: 22,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  assinaturaStepDescription: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 32,
+    lineHeight: 20,
+  },
+  captureButton: {
+    backgroundColor: "#009ee2",
+    paddingVertical: 20,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 200,
+  },
+  captureButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    marginTop: 8,
+  },
+  photoPreviewContainer: {
+    width: "100%",
+    alignItems: "center",
+  },
+  assinaturaPreview: {
+    width: "100%",
+    height: 300,
+    borderRadius: 12,
+    marginBottom: 20,
+    resizeMode: "contain",
+    backgroundColor: "#f5f5f5",
+  },
+  retakeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#666",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    marginBottom: 12,
+    minWidth: 150,
+    justifyContent: "center",
+  },
+  retakeButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    marginLeft: 8,
+  },
+  continueButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#009ee2",
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 8,
+    minWidth: 200,
+    justifyContent: "center",
+  },
+  continueButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    marginRight: 8,
+  },
+  finalizeButton: {
+    backgroundColor: "#4CAF50",
+  },
+  signatureContainer: {
+    width: "100%",
+    height: 300,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: "#e0e0e0",
+    borderRadius: 8,
+    overflow: "hidden",
+    backgroundColor: "#fff",
+  },
+  assinaturaActionsContainer: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+    justifyContent: "center",
+    marginTop: 20,
+  },
+});

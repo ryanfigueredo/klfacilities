@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "triple-shift-484300-r2",
+  "private_key_id": "e2672d2c780367a54fc3450787e67940dc3f409c",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEuwIBADANBgkqhkiG9w0BAQEFAASCBKUwggShAgEAAoIBAQDecx+GccvEmKEB\nepoPzaXq5WfLUasznE4MAENdZkbeZqIgKY15V8PKVcJHRa5nIsfM70c3IKm7dRh/\nJj6Optmbtp48ZXA/AqPlAb+QUy2fSkcotF05/MBvPEzvj4oz5pMMoieLOEY5+lht\n5n6gRW1Q9Jc1NZ3Q16jCJ4U+PdOwztTiLuPdPdlN5WE3Swiwlt8cmZGF0XFTWHR7\nLKyLjOvAUAs+vEvDoQ7MJG/so4KgxoMmZYZNmc7XGnOUraatmDeX4ZBTKQnhc5xF\nR6UbFBMbNS9qoPNEU+8wbKrw67gdzUftVPDI9JbY0FYFHPZOvuWKDyh98KAjfxnW\nTYxxJKszAgMBAAECgf8eTezAUFYhupsdRwJIsIAyTdWpAyK8YSkjazzHNDp4aecl\nu0nC2HA5igwcjzuqC/AHxw6jQN2LqJUjofBC4/maxRIELGFGOlAIY7SVTVtnt4m8\ncapV5HmUi2lL11n19dMOi/2KOAylBeKsEx84J6VeM/QEW19Mf/JRkhzeKryfbiFi\nHaRXXnBb1P7eo58rRr+hjZgO0QyIS1pO8vh7LYpZOVo0PhJjTGpZhjkVpsOGH8qB\nQjB3fLw4x+1lTO9tGnjWk4jEY0Q14djM3AnXnofDJ0sSuPI/Nxe5YYbwbm/aB7n6\nxPAQPOCfInkpkmiGeH/q6Fon/8+r2/W35VGhs8kCgYEA8uTlv2k/eK1j0MZm83Eu\ngKzUXJfe3C56Nq1wSlFEUtX35GIK+5LWBGULWBx1KX2HS3za2q6Ljgfpo2T1YkBb\nTrt7atmixL7bvHUiH9oyFIyfaxjnn8+WjUrJzEyKXdw3m2e0zS/n4du7lFAjOtA5\nfrqe1uMMrwkMWVjQ/g2aw4sCgYEA6nPThn/7yLXJSAl/wmaOCdEOvj9veFbvXGJN\nhUtmOJ1NRt6Qcl54HQPV8dGYnuAet5AydyaHZU+7VMlbK8FArJfzIW4zlPSPaqNB\npMZnz6fXUiuwKQuoRwasRKONqoS3c7qqBApkoZDnHkFb36gsUj9Mc2arMsGP57LB\njXZQi/kCgYEAzdjJEJfsr6QahJOwKj5QT8Ko0rPuriFBd9cy4/jNc3pcdJPWhPAj\nKmRL4ed0L65vm7z7aPsl0D/KdKwZ/aNW/nmLFbnN5PlvFd8bBW2QpbOrY0MfAWQX\nTjUEonx3gyYfhje0lXQ1C0eCSCZGRRC0uT8FYE3ZsPl1Gr9XlwcGkxMCgYB68sK6\nheNEHhCv9ktJZv6Vp0xT+HA8a1qa1/JPNHsmtVcREyYs092pWZmYdpHSvzVcjgHo\n+guG1YknrXBiQbXozMZzgZcLRjTvdy21e1Z1T09biA2ZeMOGe7lbRWnFQlPyHLGL\n7OdY0uRguWW0pDyZ5RfybKTauSb+Gn/l72XOAQKBgF4c6o7JtmNlQToAFkar9nDi\n+d72KMN00INLAymlqOMNDxXbymFRKxEnJ2t3x0WA+QCptGvrmsJ6xjk2h8iCUj2L\nqQLYPMqJtbt6r7O1ppJOX/pV82KWpvNUHIV0jYPzZ45b3lqAeVLCxMch3tfhe+IT\nx5IXMCaLbYPE5iFoqZnh\n-----END PRIVATE KEY-----\n",
+  "client_email": "expo-submit@triple-shift-484300-r2.iam.gserviceaccount.com",
+  "client_id": "105665302846416639116",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/expo-submit%40triple-shift-484300-r2.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

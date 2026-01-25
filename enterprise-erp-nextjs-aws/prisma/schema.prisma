@@ -1,0 +1,1293 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  MASTER
+  ADMIN
+  RH
+  SUPERVISOR
+  JURIDICO
+  OPERACIONAL
+  LAVAGEM
+  PLANEJAMENTO_ESTRATEGICO
+}
+
+enum TipoMov {
+  RECEITA
+  DESPESA
+}
+
+enum TipoMovimento {
+  RECEITA
+  DESPESA
+}
+
+enum StatusProposta {
+  PENDENTE
+  APROVADA
+  RECUSADA
+  AJUSTES
+}
+
+enum StatusProvisao {
+  PENDENTE
+  EFETIVADO
+  CANCELADO
+}
+
+enum PeriodicidadeProvisionamento {
+  MENSAL
+  QUINZENAL
+  SEMANAL
+  BIMESTRAL
+  TRIMESTRAL
+  SEMESTRAL
+  ANUAL
+}
+
+enum AnomalyType {
+  DUPLICATE
+  NO_CATEGORY
+  OUTLIER
+}
+
+enum AnomalyStatus {
+  PENDING
+  RESOLVED
+  IGNORED
+}
+
+enum StatusIncidente {
+  ABERTO
+  CONCLUIDO
+}
+
+enum CategoriaChamado {
+  FUNCIONARIO_FALTOU
+  FALTA_INSUMOS
+  PROBLEMA_LIMPEZA
+  PROBLEMA_ESTRUTURAL
+  OUTRO
+}
+
+enum ChecklistPerguntaTipo {
+  TEXTO
+  FOTO
+  BOOLEANO
+  NUMERICO
+  SELECAO
+}
+
+enum ChecklistRespostaStatus {
+  RASCUNHO
+  PENDENTE_APROVACAO
+  CONCLUIDO
+}
+
+enum TipoCombustivel {
+  GASOLINA
+  ALCOOL
+  DIESEL
+  FLEX
+}
+
+enum SituacaoTanque {
+  CHEIO
+  MEIO_TANQUE
+  QUASE_VAZIO
+}
+
+model User {
+  id                String      @id @default(uuid())
+  name              String
+  email             String      @unique
+  password          String
+  role              Role        @default(RH)
+  photoUrl          String?
+  whatsapp          String?
+  ativo             Boolean     @default(true)
+  createdAt         DateTime    @default(now())
+  movimentos        Movimento[]
+  movimentosUpdated Movimento[] @relation("MovimentoUpdatedBy")
+  auditLogs         AuditLog[]
+  movimentosDeleted Movimento[] @relation("MovimentoDeletedBy")
+
+  importBatches                 ImportBatch[]
+  registrosPontoCriados         RegistroPonto[]                  @relation("RegistroPontoCriadoPor")
+  registrosPontoEditados        RegistroPonto[]                  @relation("RegistroPontoEditadoPor")
+  manifestacoesRespondidas      ManifestacaoFuncionario[]        @relation("ManifestacaoRespondidaPor")
+  processosJuridicos            ProcessoJuridico[]
+  solicitacoesExclusao          SolicitacaoExclusaoColaborador[] @relation("SolicitacoesExclusao")
+  aprovacoesExclusao            SolicitacaoExclusaoColaborador[] @relation("SolicitacoesAprovacao")
+  supervisorScopes              SupervisorScope[]
+  brandingUpdates               BrandingSettings[]               @relation("BrandingSettingsUpdatedBy")
+  incidentesCriados             Incidente[]
+  incidentesConcluidos          Incidente[]                      @relation("IncidenteConcluidoPor")
+  vehiclesResponsavel           Vehicle[]                        @relation("VehicleResponsavel")
+  vehicleAssignments            VehicleUser[]
+  kmRecords                     KmRecord[]
+  fuelRecords                   FuelRecord[]
+  rotaRecords                   RotaRecord[]
+  semPararRegistrosCriados      SemPararRegistro[]
+  checklistTemplatesCriados     ChecklistTemplate[]              @relation("ChecklistTemplateCriadoPor")
+  checklistTemplatesAtualizados ChecklistTemplate[]              @relation("ChecklistTemplateAtualizadoPor")
+  checklistRespostas            ChecklistResposta[]
+  checklistRespostasAssinadas   ChecklistResposta[]              @relation("ChecklistGerenteAssinatura")
+  whatsappMessagesSent          WhatsAppMessageLog[]             @relation("WhatsAppMessagesSentBy")
+  emailsSent                    EmailLog[]                       @relation("EmailsSentBy")
+  solicitacoesExclusaoConfig    SolicitacaoExclusaoConfig[]      @relation("SolicitacoesExclusaoConfig")
+  aprovacoesExclusaoConfig      SolicitacaoExclusaoConfig[]      @relation("AprovacoesExclusaoConfig")
+}
+
+model Unidade {
+  id                 String                              @id @default(uuid())
+  nome               String                              @unique
+  cidade             String? // Cidade onde a unidade está localizada
+  estado             String? // Sigla do estado (ex: SP, RJ, MG)
+  ativa              Boolean                             @default(true)
+  lat                Decimal?
+  lng                Decimal?
+  radiusM            Int?
+  whatsappLider      String? // Número do WhatsApp do líder da unidade
+  whatsappSupervisor String? // Número do WhatsApp do supervisor
+  emailSupervisor    String? // Email do supervisor
+  createdAt          DateTime                            @default(now())
+  updatedAt          DateTime                            @updatedAt
+  movimentos         Movimento[]
+  mapeamentos        MapeamentoGrupoUnidadeResponsavel[]
+
+  funcionarios                   Funcionario[]
+  pontos                         RegistroPonto[]
+  qrcodes                        PontoQrCode[]
+  checklists                     ChecklistDigital[]
+  tickets                        TicketChecklist[]
+  curriculos                     Curriculo[]
+  templatesProvisionamento       ProvisionamentoTemplate[]
+  manifestacoes                  ManifestacaoFuncionario[]
+  supervisorScopes               SupervisorScope[]
+  vehicles                       Vehicle[]
+  incidentes                     Incidente[]
+  checklistEscoposOperacionais   ChecklistEscopo[]
+  checklistRespostasOperacionais ChecklistResposta[]
+  clientesFinais                 ClienteFinal[]
+}
+
+model Grupo {
+  id          String                              @id @default(uuid())
+  nome        String                              @unique
+  ativo       Boolean                             @default(true)
+  createdAt   DateTime                            @default(now())
+  updatedAt   DateTime                            @updatedAt
+  movimentos  Movimento[]
+  mapeamentos MapeamentoGrupoUnidadeResponsavel[]
+
+  funcionarios                   Funcionario[]
+  templatesProvisionamento       ProvisionamentoTemplate[]
+  supervisorScopes               SupervisorScope[]
+  vehicles                       Vehicle[]
+  incidentes                     Incidente[]
+  checklistEscoposOperacionais   ChecklistEscopo[]
+  checklistRespostasOperacionais ChecklistResposta[]
+  manifestacoes                  ManifestacaoFuncionario[]
+  clientesFinaisGrupos           ClienteFinalGrupo[]
+}
+
+model Vehicle {
+  id              String          @id @default(uuid())
+  placa           String          @unique
+  modelo          String?
+  ano             Int?
+  tipoCombustivel TipoCombustivel
+  grupoId         String?
+  unidadeId       String?
+  responsavelId   String?
+  observacoes     String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  grupo             Grupo?             @relation(fields: [grupoId], references: [id])
+  unidade           Unidade?           @relation(fields: [unidadeId], references: [id])
+  responsavel       User?              @relation("VehicleResponsavel", fields: [responsavelId], references: [id])
+  usuarios          VehicleUser[]
+  kmRegistros       KmRecord[]
+  abastecimentos    FuelRecord[]
+  rotas             RotaRecord[]
+  semPararRegistros SemPararRegistro[]
+
+  @@index([grupoId])
+  @@index([unidadeId])
+  @@index([responsavelId])
+}
+
+model VehicleUser {
+  id        String   @id @default(uuid())
+  veiculoId String
+  usuarioId String
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  veiculo Vehicle @relation(fields: [veiculoId], references: [id])
+  usuario User    @relation(fields: [usuarioId], references: [id])
+
+  @@unique([veiculoId, usuarioId])
+  @@index([usuarioId])
+}
+
+model KmRecord {
+  id         String   @id @default(uuid())
+  veiculoId  String
+  usuarioId  String
+  km         Float
+  photoUrl   String?
+  observacao String?
+  createdAt  DateTime @default(now())
+
+  veiculo Vehicle @relation(fields: [veiculoId], references: [id])
+  usuario User    @relation(fields: [usuarioId], references: [id])
+
+  @@index([veiculoId])
+  @@index([usuarioId])
+  @@index([createdAt])
+}
+
+model FuelRecord {
+  id             String         @id @default(uuid())
+  veiculoId      String
+  usuarioId      String
+  litros         Float
+  valor          Float
+  situacaoTanque SituacaoTanque
+  kmAtual        Float
+  photoUrl       String?
+  observacao     String?
+  createdAt      DateTime       @default(now())
+
+  veiculo Vehicle @relation(fields: [veiculoId], references: [id])
+  usuario User    @relation(fields: [usuarioId], references: [id])
+
+  @@index([veiculoId])
+  @@index([usuarioId])
+  @@index([createdAt])
+}
+
+model SemPararRegistro {
+  id                String   @id @default(uuid())
+  veiculoId         String
+  data              DateTime @db.Date
+  valor             Decimal  @db.Decimal(10, 2)
+  descricao         String?
+  local             String?
+  tipo              String?  @default("PEDAGIO")
+  arquivoImportacao String?
+  linhaPlanilha     Int?
+  createdAt         DateTime @default(now())
+  createdById       String?
+
+  veiculo   Vehicle @relation(fields: [veiculoId], references: [id])
+  createdBy User?   @relation(fields: [createdById], references: [id])
+
+  @@index([data])
+  @@index([veiculoId])
+}
+
+model RotaRecord {
+  id                    String   @id @default(uuid())
+  veiculoId             String
+  usuarioId             String
+  kmSaida               Float
+  photoUrl              String?
+  partida               String
+  destino               String
+  alterouRota           Boolean  @default(false)
+  alteracaoRota         String?
+  realizouAbastecimento Boolean  @default(false)
+  observacao            String?
+  createdAt             DateTime @default(now())
+
+  veiculo Vehicle @relation(fields: [veiculoId], references: [id])
+  usuario User    @relation(fields: [usuarioId], references: [id])
+
+  @@index([veiculoId])
+  @@index([usuarioId])
+  @@index([createdAt])
+}
+
+model Responsavel {
+  id          String                              @id @default(uuid())
+  nome        String                              @unique
+  ativo       Boolean                             @default(true)
+  createdAt   DateTime                            @default(now())
+  updatedAt   DateTime                            @updatedAt
+  mapeamentos MapeamentoGrupoUnidadeResponsavel[]
+}
+
+model MapeamentoGrupoUnidadeResponsavel {
+  id            String   @id @default(uuid())
+  grupoId       String
+  unidadeId     String
+  responsavelId String
+  ativo         Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  grupo       Grupo       @relation(fields: [grupoId], references: [id])
+  unidade     Unidade     @relation(fields: [unidadeId], references: [id])
+  responsavel Responsavel @relation(fields: [responsavelId], references: [id])
+
+  @@unique([grupoId, unidadeId, responsavelId])
+  @@index([unidadeId])
+}
+
+model SupervisorScope {
+  id           String   @id @default(uuid())
+  supervisorId String
+  grupoId      String?
+  unidadeId    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  supervisor User     @relation(fields: [supervisorId], references: [id])
+  grupo      Grupo?   @relation(fields: [grupoId], references: [id])
+  unidade    Unidade? @relation(fields: [unidadeId], references: [id])
+
+  @@unique([supervisorId, grupoId, unidadeId])
+  @@index([grupoId])
+  @@index([unidadeId])
+}
+
+enum UrgenciaNivel {
+  CRITICA
+  ALTA
+  NORMAL
+  BAIXA
+  MUITO_BAIXA
+}
+
+model CategoriaUrgenciaChamado {
+  id            String         @id @default(uuid())
+  urgenciaNivel UrgenciaNivel // Nível de urgência: Crítica, Alta, Normal, Baixa, Muito Baixa
+  nome          String         // Nome da categoria (ex: "Funcionário Faltou", "Falta de Insumos")
+  prazoHoras    Int            // Prazo em horas para resolução (calculado automaticamente)
+  descricao     String?        // Descrição do prazo (calculada automaticamente)
+  ordem         Int            @default(0) // Ordem de exibição (calculada automaticamente)
+  ativo         Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  incidentes    Incidente[]
+
+  @@index([urgenciaNivel])
+  @@index([ordem])
+}
+
+model Incidente {
+  id                  String            @id @default(uuid())
+  titulo              String
+  categoria           CategoriaChamado?
+  categoriaUrgenciaId String? // Referência à categoria de urgência
+  urgencia            Int?              @ignore // Campo legado, manter por compatibilidade
+  descricao           String
+  status              StatusIncidente   @default(ABERTO)
+  grupoId             String
+  unidadeId           String
+  imagemUrl           String? // Foto inicial do chamado
+  imagemConclusaoUrl  String? // Foto de prova de conclusão
+  criadoPorId         String?
+  clienteFinalId      String?
+  concluidoPorId      String?
+  conclusaoNotas      String?
+  concluidoEm         DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  grupo             Grupo                     @relation(fields: [grupoId], references: [id])
+  unidade           Unidade                   @relation(fields: [unidadeId], references: [id])
+  criadoPor         User?                     @relation(fields: [criadoPorId], references: [id])
+  clienteFinal      ClienteFinal?             @relation(fields: [clienteFinalId], references: [id])
+  concluidoPor      User?                     @relation("IncidenteConcluidoPor", fields: [concluidoPorId], references: [id])
+  categoriaUrgencia CategoriaUrgenciaChamado? @relation(fields: [categoriaUrgenciaId], references: [id])
+
+  @@index([grupoId])
+  @@index([unidadeId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([clienteFinalId])
+  @@index([categoria])
+  @@index([categoriaUrgenciaId])
+}
+
+model Categoria {
+  id                       String                    @id @default(uuid())
+  nome                     String
+  tipo                     TipoMovimento
+  ativo                    Boolean                   @default(true)
+  createdAt                DateTime                  @default(now())
+  movimentos               Movimento[]               @relation("MovimentoCategoria")
+  templatesProvisionamento ProvisionamentoTemplate[]
+
+  @@unique([nome, tipo])
+}
+
+model Movimento {
+  id             String       @id @default(uuid())
+  tipo           TipoMov
+  dataLanc       DateTime
+  competencia    DateTime
+  descricao      String
+  grupoId        String?
+  unidadeId      String?
+  categoriaId    String?
+  categoria      String?
+  subcategoria   String?
+  centroCusto    String?
+  documento      String?
+  formaPagamento String?
+  valor          Decimal
+  valorAssinado  Decimal
+  responsavel    String?
+  funcionarioId  String?
+  criadoPorId    String
+  criadoEm       DateTime     @default(now())
+  criadoPor      User         @relation(fields: [criadoPorId], references: [id])
+  updatedAt      DateTime     @updatedAt
+  updatedById    String?
+  updatedBy      User?        @relation("MovimentoUpdatedBy", fields: [updatedById], references: [id])
+  grupo          Grupo?       @relation(fields: [grupoId], references: [id])
+  unidade        Unidade?     @relation(fields: [unidadeId], references: [id])
+  categoriaRel   Categoria?   @relation("MovimentoCategoria", fields: [categoriaId], references: [id])
+  funcionario    Funcionario? @relation(fields: [funcionarioId], references: [id])
+
+  deletedAt     DateTime?
+  deletedById   String?
+  deletedReason String?
+  deletedBy     User?     @relation("MovimentoDeletedBy", fields: [deletedById], references: [id])
+
+  parentId String?
+  parent   Movimento?  @relation("MovParent", fields: [parentId], references: [id])
+  children Movimento[] @relation("MovParent")
+
+  origem String?
+
+  provisionamentos Provisionamento[]
+
+  importItemId String?
+  importItem   ImportItem?  @relation("MovimentoToImportItem", fields: [importItemId], references: [id])
+  importItems  ImportItem[] @relation("ImportItemToMovimento")
+
+  veiculoId String? @ignore
+
+  @@index([dataLanc, tipo])
+  @@index([competencia])
+  @@index([grupoId])
+  @@index([unidadeId])
+  @@index([categoria])
+  @@index([categoriaId])
+  @@index([deletedAt])
+  @@index([parentId])
+  @@index([origem])
+  @@index([funcionarioId])
+  @@index([updatedById])
+}
+
+model Funcionario {
+  id             String   @id @default(uuid())
+  nome           String   @unique
+  cpf            String?  @unique
+  codigo         Int? // Código do funcionário (3 dígitos numéricos)
+  fotoUrl        String? // URL da foto do funcionário (S3)
+  faceDescriptor Json? // Descritor facial para reconhecimento (128 dimensões)
+  temCracha      Boolean  @default(false) // Indica se o colaborador possui crachá
+  fotoCracha     String? // URL da foto para o crachá (S3) - foto profissional
+  cargo          String? // Cargo/função do colaborador
+  diaFolga       Int? // Dia da semana de folga (0=Domingo, 1=Segunda, 2=Terça, 3=Quarta, 4=Quinta, 5=Sexta, 6=Sábado)
+  grupoId        String
+  unidadeId      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  grupo                Grupo                            @relation(fields: [grupoId], references: [id])
+  unidade              Unidade?                         @relation(fields: [unidadeId], references: [id])
+  movimentos           Movimento[]
+  registrosPonto       RegistroPonto[]
+  termoCiencia         TermoCienciaPonto?
+  solicitacoesExclusao SolicitacaoExclusaoColaborador[] @relation("SolicitacoesExclusao")
+
+  @@index([grupoId])
+  @@index([unidadeId])
+  @@index([codigo])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  timestamp DateTime @default(now())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+
+  action     String
+  resource   String
+  resourceId String?
+  success    Boolean @default(true)
+  error      String?
+  details    Json?
+  ip         String?
+  userAgent  String?
+  requestId  String?
+  origin     String?
+
+  @@index([timestamp])
+  @@index([resource])
+  @@index([action])
+  @@index([userId])
+}
+
+model WhatsAppMessageLog {
+  id        String   @id @default(uuid())
+  to        String // Número de telefone de destino
+  message   String   @db.Text // Conteúdo da mensagem
+  messageId String? // ID retornado pelo provedor
+  provider  String   @default("evolution-api") // evolution-api, zenvia, etc
+  success   Boolean  @default(true)
+  error     String?
+  sentAt    DateTime @default(now())
+  context   String? // Contexto: "chamado", "checklist", "relatorio", etc
+  contextId String? // ID do recurso relacionado (ex: incidenteId)
+  userId    String? // Usuário que acionou o envio (se aplicável)
+  user      User?    @relation("WhatsAppMessagesSentBy", fields: [userId], references: [id])
+
+  @@index([to])
+  @@index([sentAt])
+  @@index([provider])
+  @@index([success])
+  @@index([context, contextId])
+  @@index([userId])
+}
+
+model EmailLog {
+  id        String   @id @default(uuid())
+  to        String // Email de destino
+  subject   String // Assunto do email
+  template  String? // Template usado (ex: "password-reset", "chamado-criado")
+  emailId   String? // ID retornado pelo Resend
+  success   Boolean  @default(true)
+  error     String? // Erro se falhou
+  sentAt    DateTime @default(now())
+  context   String? // Contexto: "chamado", "checklist", "password-reset", etc
+  contextId String? // ID do recurso relacionado (ex: incidenteId)
+  userId    String? // Usuário que acionou o envio (se aplicável)
+  user      User?    @relation("EmailsSentBy", fields: [userId], references: [id])
+
+  @@index([to])
+  @@index([sentAt])
+  @@index([success])
+  @@index([template])
+  @@index([context, contextId])
+  @@index([userId])
+}
+
+model Provisionamento {
+  id             String         @id @default(uuid())
+  descricao      String
+  valor          Decimal
+  tipo           TipoMov        @default(DESPESA)
+  dataVenc       DateTime // Data de vencimento (quando será pago)
+  competencia    DateTime? // Competência contábil (quando incorre) - se null, usa dataVenc
+  dataPgto       DateTime?
+  status         StatusProvisao @default(PENDENTE)
+  documento      String?
+  formaPagamento String?
+  grupoId        String?
+  unidadeId      String?
+  categoriaId    String?
+  subcategoriaId String?
+  centroCustoId  String?
+  contaId        String?
+  obs            String?
+
+  // Relacionamento com template (se gerado automaticamente)
+  templateId String?
+  template   ProvisionamentoTemplate? @relation(fields: [templateId], references: [id])
+
+  movimentoId String?
+  movimento   Movimento? @relation(fields: [movimentoId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, dataVenc])
+  @@index([competencia])
+  @@index([grupoId, unidadeId])
+  @@index([templateId])
+}
+
+model ProvisionamentoTemplate {
+  id            String                       @id @default(uuid())
+  nome          String // Ex: "Aluguel Unidade X", "Folha de Pagamento"
+  descricao     String
+  valor         Decimal
+  tipo          TipoMov                      @default(DESPESA)
+  periodicidade PeriodicidadeProvisionamento @default(MENSAL)
+  diaVencimento Int // Dia do mês (1-31) ou dia da semana (1-7) para semanal
+  ativo         Boolean                      @default(true)
+
+  // Validade do template
+  dataInicio DateTime  @default(now())
+  dataFim    DateTime? // null = sem data fim
+
+  // Campos padrão para as provisões geradas
+  grupoId        String?
+  unidadeId      String?
+  categoriaId    String?
+  subcategoriaId String?
+  centroCustoId  String?
+  contaId        String?
+  formaPagamento String?
+  documento      String?
+  obs            String?
+
+  // Última geração
+  ultimaGeracao DateTime?
+
+  // Relacionamentos
+  grupo     Grupo?     @relation(fields: [grupoId], references: [id])
+  unidade   Unidade?   @relation(fields: [unidadeId], references: [id])
+  categoria Categoria? @relation(fields: [categoriaId], references: [id])
+
+  // Provisões geradas deste template
+  provisionamentos Provisionamento[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ativo, periodicidade])
+  @@index([grupoId, unidadeId])
+}
+
+model Anomalia {
+  id           String        @id @default(uuid())
+  movimentoIds String[]
+  type         AnomalyType
+  hash         String?
+  status       AnomalyStatus @default(PENDING)
+  notes        String?
+  createdAt    DateTime      @default(now())
+  resolvedAt   DateTime?
+  resolvedBy   String?
+
+  @@index([type])
+  @@index([status])
+  @@index([hash])
+}
+
+model ImportBatch {
+  id          String   @id @default(uuid())
+  origem      String
+  filename    String?
+  totalLinhas Int?
+  status      String   @default("EM_ANDAMENTO")
+  createdAt   DateTime @default(now())
+  createdById String?
+
+  createdBy User?        @relation(fields: [createdById], references: [id])
+  itens     ImportItem[]
+
+  @@index([origem, status])
+}
+
+model ImportItem {
+  id          String    @id @default(uuid())
+  batchId     String
+  data        DateTime?
+  placa       String?
+  veiculoId   String?   @ignore
+  valor       Decimal?
+  descricao   String?
+  documento   String?
+  origem      String
+  checksum    String?
+  grupoId     String?
+  unidadeId   String?
+  status      String    @default("PENDENTE")
+  rawJson     Json?
+  createdAt   DateTime  @default(now())
+  movimentoId String?
+
+  batch      ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  movimento  Movimento?  @relation("ImportItemToMovimento", fields: [movimentoId], references: [id])
+  movimentos Movimento[] @relation("MovimentoToImportItem")
+
+  @@unique([origem, checksum])
+  @@index([batchId, status])
+  @@index([origem, placa])
+  @@index([movimentoId])
+}
+
+enum TipoPonto {
+  ENTRADA
+  INTERVALO_INICIO
+  INTERVALO_FIM
+  SAIDA
+  HORA_EXTRA_INICIO
+  HORA_EXTRA_FIM
+}
+
+model PontoQrCode {
+  id        String   @id @default(uuid())
+  unidadeId String
+  code      String   @unique
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  unidade   Unidade         @relation(fields: [unidadeId], references: [id])
+  registros RegistroPonto[]
+
+  @@index([unidadeId])
+}
+
+model RegistroPonto {
+  id            String    @id @default(uuid())
+  funcionarioId String?
+  unidadeId     String
+  tipo          TipoPonto
+  timestamp     DateTime  @default(now())
+  lat           Decimal?
+  lng           Decimal?
+  accuracy      Decimal?
+  selfieUrl     String?
+  ip            BigInt?
+  userAgent     String?
+  deviceId      String?
+  qrcodeId      String?
+  // Protocolo de integridade
+  hash          String?
+  protocolo     String?
+  cpfSnapshot   BigInt?
+  criadoPorId   String?
+  observacao    String?
+  editadoPorId  String?
+
+  funcionario Funcionario? @relation(fields: [funcionarioId], references: [id])
+  unidade     Unidade      @relation(fields: [unidadeId], references: [id])
+  qrcode      PontoQrCode? @relation(fields: [qrcodeId], references: [id])
+  criadoPor   User?        @relation("RegistroPontoCriadoPor", fields: [criadoPorId], references: [id])
+  editadoPor  User?        @relation("RegistroPontoEditadoPor", fields: [editadoPorId], references: [id])
+
+  @@index([funcionarioId, timestamp])
+  @@index([unidadeId, timestamp])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  email     String
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+model ChecklistTemplate {
+  id              String   @id @default(uuid())
+  titulo          String
+  descricao       String?
+  ativo           Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  criadoPorId     String?
+  atualizadoPorId String?
+
+  criadoPor     User?                    @relation("ChecklistTemplateCriadoPor", fields: [criadoPorId], references: [id])
+  atualizadoPor User?                    @relation("ChecklistTemplateAtualizadoPor", fields: [atualizadoPorId], references: [id])
+  grupos        ChecklistGrupoTemplate[]
+  escopos       ChecklistEscopo[]
+  respostas     ChecklistResposta[]
+
+  @@index([ativo])
+  @@index([createdAt])
+}
+
+model ChecklistGrupoTemplate {
+  id         String   @id @default(uuid())
+  templateId String
+  titulo     String
+  descricao  String?
+  ordem      Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  template  ChecklistTemplate           @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  perguntas ChecklistPerguntaTemplate[]
+
+  @@index([templateId, ordem])
+}
+
+model ChecklistPerguntaTemplate {
+  id                    String                @id @default(uuid())
+  grupoId               String
+  titulo                String
+  descricao             String?
+  tipo                  ChecklistPerguntaTipo
+  obrigatoria           Boolean               @default(false)
+  ordem                 Int
+  instrucoes            String?
+  opcoes                String[]              @default([])
+  peso                  Int? // Peso da pergunta (1-5): 1=Péssimo, 2=Ruim, 3=Regular, 4=Bom, 5=Ótimo
+  permiteMultiplasFotos Boolean               @default(false) // Permite adicionar múltiplas fotos quando tipo é FOTO
+  permiteAnexarFoto     Boolean               @default(false) // Permite anexar foto em qualquer tipo de pergunta
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  grupo     ChecklistGrupoTemplate      @relation(fields: [grupoId], references: [id], onDelete: Cascade)
+  respostas ChecklistRespostaPergunta[]
+
+  @@index([grupoId, ordem])
+}
+
+model ChecklistEscopo {
+  id                 String    @id @default(uuid())
+  templateId         String
+  unidadeId          String
+  grupoId            String?
+  ativo              Boolean   @default(true)
+  ultimoEnvioEm      DateTime?
+  ultimoSupervisorId String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  template  ChecklistTemplate   @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  unidade   Unidade             @relation(fields: [unidadeId], references: [id])
+  grupo     Grupo?              @relation(fields: [grupoId], references: [id])
+  respostas ChecklistResposta[]
+
+  @@unique([templateId, unidadeId])
+  @@index([unidadeId])
+  @@index([grupoId])
+  @@index([ativo])
+}
+
+model ChecklistResposta {
+  id           String                  @id @default(uuid())
+  templateId   String
+  escopoId     String
+  unidadeId    String
+  grupoId      String?
+  supervisorId String
+  status       ChecklistRespostaStatus @default(CONCLUIDO)
+  observacoes  String?
+  startedAt    DateTime                @default(now())
+  submittedAt  DateTime?
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  // Assinatura e verificação
+  protocolo         String?
+  assinaturaFotoUrl String?
+  lat               Decimal?
+  lng               Decimal?
+  accuracy          Decimal?
+  endereco          String? // Endereço completo obtido via reverse geocoding
+  ip                BigInt?
+  userAgent         String?
+  deviceId          String?
+  hash              String?
+
+  // Assinatura do Gerente
+  gerenteAssinaturaFotoUrl String?
+  gerenteAssinadoEm        DateTime?
+  gerenteAssinadoPorId     String?
+  gerenteAssinadoPor       User?     @relation("ChecklistGerenteAssinatura", fields: [gerenteAssinadoPorId], references: [id])
+
+  template              ChecklistTemplate               @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  escopo                ChecklistEscopo                 @relation(fields: [escopoId], references: [id], onDelete: Cascade)
+  unidade               Unidade                         @relation(fields: [unidadeId], references: [id])
+  grupo                 Grupo?                          @relation(fields: [grupoId], references: [id])
+  supervisor            User                            @relation(fields: [supervisorId], references: [id])
+  respostas             ChecklistRespostaPergunta[]
+  confirmacoesRelatorio ChecklistRelatorioConfirmacao[]
+
+  @@index([templateId])
+  @@index([unidadeId])
+  @@index([grupoId])
+  @@index([supervisorId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([protocolo])
+}
+
+model ChecklistRespostaPergunta {
+  id           String   @id @default(uuid())
+  respostaId   String
+  perguntaId   String
+  valorTexto   String?
+  valorBoolean Boolean?
+  valorNumero  Float?
+  valorOpcao   String?
+  fotoUrl      String?
+  observacao   String?
+  nota         Int? // Nota selecionada (1-5): 1=Péssimo, 2=Ruim, 3=Regular, 4=Bom, 5=Ótimo
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  resposta ChecklistResposta         @relation(fields: [respostaId], references: [id], onDelete: Cascade)
+  pergunta ChecklistPerguntaTemplate @relation(fields: [perguntaId], references: [id], onDelete: Cascade)
+
+  @@unique([respostaId, perguntaId])
+  @@index([perguntaId])
+}
+
+model ClienteFinal {
+  id        String   @id @default(uuid())
+  nome      String
+  email     String
+  whatsapp  String?
+  unidadeId String?
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  unidade                    Unidade?              @relation(fields: [unidadeId], references: [id])
+  grupos                     ClienteFinalGrupo[]
+  confirmacoesRelatorio       ChecklistRelatorioConfirmacao[]
+  incidentes                 Incidente[]
+
+  @@unique([email])
+  @@index([unidadeId])
+  @@index([email])
+}
+
+model ClienteFinalGrupo {
+  id            String   @id @default(uuid())
+  clienteFinalId String
+  grupoId       String
+  createdAt     DateTime @default(now())
+
+  clienteFinal ClienteFinal @relation(fields: [clienteFinalId], references: [id], onDelete: Cascade)
+  grupo        Grupo        @relation(fields: [grupoId], references: [id], onDelete: Cascade)
+
+  @@unique([clienteFinalId, grupoId])
+  @@index([clienteFinalId])
+  @@index([grupoId])
+}
+
+model ChecklistRelatorioConfirmacao {
+  id               String    @id @default(uuid())
+  respostaId       String
+  clienteFinalId   String
+  emailEnviadoEm   DateTime  @default(now())
+  confirmadoEm     DateTime?
+  confirmado       Boolean   @default(false)
+  tokenConfirmacao String    @unique
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  resposta     ChecklistResposta @relation(fields: [respostaId], references: [id], onDelete: Cascade)
+  clienteFinal ClienteFinal      @relation(fields: [clienteFinalId], references: [id])
+
+  @@index([respostaId])
+  @@index([clienteFinalId])
+  @@index([tokenConfirmacao])
+}
+
+// Enums para Checklist Digital
+enum TipoChecklist {
+  LIMPEZA
+  INSUMOS
+  SATISFACAO
+}
+
+enum StatusLimpeza {
+  LIMPEZA
+  RETIRADA_LIXO
+}
+
+enum TipoInsumo {
+  ALCOOL_HIGIENIZACAO
+  PAPEL_HIGIENICO
+  PAPEL_TOALHA
+  SABONETE
+}
+
+enum AvaliacaoSatisfacao {
+  MUITO_RUIM
+  RUIM
+  REGULAR
+  BOM
+  MUITO_BOM
+}
+
+enum FatorInfluencia {
+  CHEIRO
+  DISPONIBILIDADE_INSUMOS
+  LIMPEZA_SUPERFICIES
+  POSTURA_EQUIPE
+  RECOLHIMENTO_LIXO
+}
+
+enum StatusTicket {
+  PENDENTE
+  CONCLUIDO
+  CANCELADO
+}
+
+// Modelo para Checklist Digital
+model ChecklistDigital {
+  id        String        @id @default(cuid())
+  unidadeId String
+  tipo      TipoChecklist
+
+  // Dados específicos por tipo
+  servicosLimpeza    StatusLimpeza[]
+  insumosSolicitados TipoInsumo[]
+
+  // Dados da pesquisa de satisfação
+  avaliacaoLimpeza  AvaliacaoSatisfacao?
+  fatoresInfluencia FatorInfluencia[]
+  comentarios       String?
+
+  // Metadados
+  ipAddress String?
+  userAgent String?
+  fotoUrl   String? // URL da foto anexada (S3)
+  timestamp DateTime @default(now())
+
+  // Relacionamentos
+  unidade Unidade          @relation(fields: [unidadeId], references: [id], onDelete: Cascade)
+  ticket  TicketChecklist?
+
+  @@index([unidadeId])
+  @@index([tipo])
+  @@index([timestamp])
+}
+
+// Modelo para Tickets de Checklist
+model TicketChecklist {
+  id                String       @id @default(cuid())
+  checklistId       String       @unique
+  unidadeId         String
+  status            StatusTicket @default(PENDENTE)
+  whatsappMessageId String? // ID da mensagem do WhatsApp
+  concluidoEm       DateTime?
+  concluidoPor      String? // Nome de quem concluiu
+  observacoes       String? // Observações do responsável
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  checklist ChecklistDigital @relation(fields: [checklistId], references: [id])
+  unidade   Unidade          @relation(fields: [unidadeId], references: [id])
+
+  @@map("ticket_checklist")
+}
+
+model BrandingSettings {
+  id                 String   @id
+  primaryColor       String   @default("#009ee2")
+  secondaryColor     String   @default("#e8f5ff")
+  accentColor        String   @default("#0088c7")
+  sidebarBackground  String   @default("#f6fbff")
+  sidebarTextColor   String   @default("#0b2b4f")
+  sidebarLogoDataUrl String?  @db.Text
+  loginLogoDataUrl   String?  @db.Text
+  updatedAt          DateTime @updatedAt
+  updatedById        String?
+
+  updatedBy User? @relation("BrandingSettingsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+// Banco de Talentos
+model Curriculo {
+  id          String   @id @default(uuid())
+  nome        String
+  sobrenome   String
+  telefone    String
+  email       String?
+  endereco    String? // Endereço completo para cálculo de VT
+  unidadeId   String
+  arquivoUrl  String // URL do arquivo PDF do currículo (S3)
+  observacoes String?
+  status      String   @default("PENDENTE") // PENDENTE, CONTATADO, CONTRATADO, DESCARTADO
+  origem      String   @default("MANUAL") // MANUAL, INDEED, OUTRO
+  origemId    String? // ID externo da candidatura (ex: ID do Indeed)
+  origemDados Json? // Dados adicionais da origem (JSON)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  unidade Unidade @relation(fields: [unidadeId], references: [id])
+
+  @@index([unidadeId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([origem])
+  @@index([origemId])
+}
+
+// Central de Atendimento ao Funcionário
+model ManifestacaoFuncionario {
+  id              String    @id @default(uuid())
+  tipo            String // ELOGIO, SUGESTAO, DENUNCIA
+  mensagem        String
+  funcionarioNome String?
+  funcionarioCpf  String?
+  grupoId         String?
+  unidadeId       String?
+  status          String    @default("PENDENTE") // PENDENTE, EM_ANALISE, RESOLVIDA, ARQUIVADA
+  resposta        String? // Resposta da administração
+  respondidoPorId String?
+  respondidoEm    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  grupo         Grupo?   @relation(fields: [grupoId], references: [id])
+  unidade       Unidade? @relation(fields: [unidadeId], references: [id])
+  respondidoPor User?    @relation("ManifestacaoRespondidaPor", fields: [respondidoPorId], references: [id])
+
+  @@index([grupoId])
+  @@index([unidadeId])
+  @@index([status])
+  @@index([tipo])
+  @@index([createdAt])
+}
+
+// Solicitações de Exclusão de Colaboradores
+enum StatusSolicitacaoExclusao {
+  PENDENTE
+  APROVADA
+  REJEITADA
+}
+
+model SolicitacaoExclusaoColaborador {
+  id              String                    @id @default(uuid())
+  funcionarioId   String
+  funcionario     Funcionario               @relation("SolicitacoesExclusao", fields: [funcionarioId], references: [id], onDelete: Cascade)
+  solicitadoPorId String
+  solicitadoPor   User                      @relation("SolicitacoesExclusao", fields: [solicitadoPorId], references: [id])
+  motivo          String?
+  status          StatusSolicitacaoExclusao @default(PENDENTE)
+  aprovadoPorId   String?
+  aprovadoPor     User?                     @relation("SolicitacoesAprovacao", fields: [aprovadoPorId], references: [id])
+  aprovadoEm      DateTime?
+  observacoes     String?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  @@index([status])
+  @@index([funcionarioId])
+  @@index([solicitadoPorId])
+  @@index([createdAt])
+}
+
+model TermoCienciaPonto {
+  id            String   @id @default(uuid())
+  funcionarioId String   @unique
+  assinadoEm    DateTime @default(now())
+  ip            BigInt?
+  userAgent     String?
+  deviceId      String?
+  hash          String? // Hash para garantir integridade
+  versaoTermo   String   @default("1.0.0") // Versão do termo que foi assinado
+
+  funcionario Funcionario @relation(fields: [funcionarioId], references: [id], onDelete: Cascade)
+
+  @@index([funcionarioId])
+  @@index([assinadoEm])
+}
+
+enum StatusProcesso {
+  EM_ANDAMENTO
+  ARQUIVADO
+  AGUARDANDO_PAGAMENTO
+  PAGO
+  CANCELADO
+}
+
+enum StatusParcela {
+  PENDENTE
+  PAGA
+  VENCIDA
+}
+
+model ProcessoJuridico {
+  id             String         @id @default(uuid())
+  numeroProcesso String // Número do processo (ex: 1234567-89.2024.8.26.0100)
+  reclamante     String? // Reclamante (antes: cliente)
+  advogado       String? // Nome do advogado responsável
+  escritorio     String? // Escritório de advocacia
+  tipoProcesso   String? // Tipo do processo (trabalhista, cível, tributário, etc)
+  valorCausa     Decimal? // Valor da causa (antes: valorProcesso)
+  observacoes    String? // Observações gerais
+  status         StatusProcesso @default(EM_ANDAMENTO)
+  arquivosUrl    String[]       @default([]) // URLs de documentos anexos (S3)
+  criadoPorId    String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  criadoPor User              @relation(fields: [criadoPorId], references: [id])
+  parcelas  ParcelaProcesso[]
+
+  @@index([status])
+  @@index([numeroProcesso])
+  @@index([criadoPorId])
+}
+
+model ParcelaProcesso {
+  id                 String        @id @default(uuid())
+  processoJuridicoId String
+  valor              Decimal
+  diaVencimento      Int // Dia do mês (1-31)
+  mesVencimento      Int // Mês (1-12)
+  anoVencimento      Int? // Ano opcional (null = recorrente)
+  status             StatusParcela @default(PENDENTE)
+  notificadoEm       DateTime? // Quando foi enviado o alerta de 2 dias
+  pagoEm             DateTime? // Quando foi marcado como pago
+  observacoes        String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  processoJuridico ProcessoJuridico @relation(fields: [processoJuridicoId], references: [id], onDelete: Cascade)
+
+  @@index([processoJuridicoId])
+  @@index([status])
+  @@index([diaVencimento, mesVencimento])
+}
+
+// Solicitações de exclusão de recursos de configuração (grupos, unidades, supervisores)
+enum TipoSolicitacaoExclusao {
+  GRUPO
+  UNIDADE
+  SUPERVISOR_SCOPE
+}
+
+enum StatusSolicitacaoExclusaoConfig {
+  PENDENTE
+  APROVADA
+  REJEITADA
+}
+
+model SolicitacaoExclusaoConfig {
+  id              String                          @id @default(uuid())
+  tipo            TipoSolicitacaoExclusao
+  resourceId      String // ID do recurso a ser excluído
+  solicitadoPorId String
+  solicitadoPor   User                            @relation("SolicitacoesExclusaoConfig", fields: [solicitadoPorId], references: [id])
+  motivo          String?
+  status          StatusSolicitacaoExclusaoConfig @default(PENDENTE)
+  aprovadoPorId   String?
+  aprovadoPor     User?                           @relation("AprovacoesExclusaoConfig", fields: [aprovadoPorId], references: [id])
+  aprovadoEm      DateTime?
+  observacoes     String?
+  createdAt       DateTime                        @default(now())
+  updatedAt       DateTime                        @updatedAt
+
+  @@index([status])
+  @@index([solicitadoPorId])
+  @@index([tipo, resourceId])
+  @@index([createdAt])
+}

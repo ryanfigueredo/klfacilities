@@ -1,0 +1,720 @@
+{
+  "total": 51,
+  "grupos": [
+    "Gbarbosa",
+    "Giga",
+    "Mercantil",
+    "Mundial",
+    "Profarma",
+    "Spani",
+    "TotalAtacado"
+  ],
+  "unidades": [
+    "Americana",
+    "Araras",
+    "Atibaia",
+    "Barra Funda",
+    "Bauru",
+    "Boituva",
+    "Bragança Paulista 1",
+    "Bragança Paulista 2",
+    "Brasilia",
+    "Brasilia Aeroporto",
+    "Cachoeirinha",
+    "Camacari",
+    "Cuiabá",
+    "Curitiba",
+    "Dom Pedro",
+    "Geral",
+    "Itapetininga",
+    "Jd. Odete",
+    "Jundiaí",
+    "Limao Escri",
+    "Limão",
+    "Marília",
+    "Maua",
+    "Mauá 2",
+    "Ouro Verde",
+    "Paraiba",
+    "Parelheiros",
+    "Paulínia",
+    "Pernambuco",
+    "Pirassununga",
+    "Registro",
+    "São Carlos",
+    "São João",
+    "Tatuapé",
+    "Tatuí",
+    "Tietê Barra Funda",
+    "Varzea Paulista",
+    "Vila Formosa",
+    "Vila Prudente"
+  ],
+  "supervisors": [
+    "Adriana",
+    "Andrea",
+    "Cida",
+    "Gislene",
+    "Givaldo",
+    "Ilan",
+    "Jucelio",
+    "Marcio"
+  ],
+  "parsed": [
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Jd. Odete",
+      "cargo": "LIDER",
+      "nome": "SIMONE DE SOUZA ",
+      "supervisor": "Adriana",
+      "whatsapp": "11913269177",
+      "isMultiGrupo": false,
+      "linhaOriginal": 2
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Maua",
+      "cargo": "LIDER",
+      "nome": "ESTEFANI CAMILA CONSTANÇA ",
+      "supervisor": "Adriana",
+      "whatsapp": "11985628583",
+      "isMultiGrupo": false,
+      "linhaOriginal": 3
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Mauá 2",
+      "cargo": "LIDER",
+      "nome": "JULIANA DE ALMEIDA LIMA",
+      "supervisor": "Adriana",
+      "whatsapp": "11976752146",
+      "isMultiGrupo": false,
+      "linhaOriginal": 4
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Parelheiros",
+      "cargo": "LIDER",
+      "nome": "ALESSANDRO ALVES BRAGA ",
+      "supervisor": "Adriana",
+      "whatsapp": "11943651996",
+      "isMultiGrupo": false,
+      "linhaOriginal": 5
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Registro",
+      "cargo": "LIDER",
+      "nome": "CAMILA RIBEIRO MARTINS PONTES",
+      "supervisor": "Adriana",
+      "whatsapp": "13996340318",
+      "isMultiGrupo": false,
+      "linhaOriginal": 6
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Tatuapé",
+      "cargo": "LIDER",
+      "nome": "S/LIDER (SUPERVISOR RESPONDE)",
+      "supervisor": "Adriana",
+      "whatsapp": "11916057183",
+      "isMultiGrupo": false,
+      "linhaOriginal": 7
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Vila Formosa",
+      "cargo": "LIDER",
+      "nome": "THAÍS MALDONADO BANDEIRA ",
+      "supervisor": "Adriana",
+      "whatsapp": "11987838072",
+      "isMultiGrupo": false,
+      "linhaOriginal": 8
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Vila Prudente",
+      "cargo": "LIDER",
+      "nome": "CAROLINA MOURA DA SILVA ALVES",
+      "supervisor": "Adriana",
+      "whatsapp": "11964405241",
+      "isMultiGrupo": false,
+      "linhaOriginal": 9
+    },
+    {
+      "grupoNome": "Giga",
+      "unidadeNome": "Barra Funda",
+      "cargo": "LIDER",
+      "nome": "NATÁLIA MARTINS",
+      "supervisor": "Andrea",
+      "whatsapp": "11965687111",
+      "isMultiGrupo": false,
+      "linhaOriginal": 10
+    },
+    {
+      "grupoNome": "Giga",
+      "unidadeNome": "Cachoeirinha",
+      "cargo": "LIDER",
+      "nome": "MARIA DA PENHA AMÉRICO RAMOS",
+      "supervisor": "Andrea",
+      "whatsapp": "11947131134",
+      "isMultiGrupo": false,
+      "linhaOriginal": 11
+    },
+    {
+      "grupoNome": "Giga",
+      "unidadeNome": "Limão",
+      "cargo": "LIDER",
+      "nome": "ANA CLAUDIA VIEIRA",
+      "supervisor": "Andrea",
+      "whatsapp": "11945829998",
+      "isMultiGrupo": false,
+      "linhaOriginal": 12
+    },
+    {
+      "grupoNome": "Giga",
+      "unidadeNome": "Limao Escri",
+      "cargo": "LIDER",
+      "nome": "ANA CLAUDIA VIEIRA",
+      "supervisor": "Andrea",
+      "whatsapp": "11945829998",
+      "isMultiGrupo": false,
+      "linhaOriginal": 13
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Tietê Barra Funda",
+      "cargo": "LIDER",
+      "nome": "S/LIDER (SUPERVISOR RESPONDE)",
+      "supervisor": "Andrea",
+      "whatsapp": "11955896253",
+      "isMultiGrupo": false,
+      "linhaOriginal": 14
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Araras",
+      "cargo": "LIDER",
+      "nome": "S/LIDER (SUPERVISOR RESPONDE)",
+      "supervisor": "Cida",
+      "whatsapp": "19971336859",
+      "isMultiGrupo": false,
+      "linhaOriginal": 15
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Bauru",
+      "cargo": "LIDER",
+      "nome": "S/LIDER (SUPERVISOR RESPONDE)",
+      "supervisor": "Cida",
+      "whatsapp": "19971336859",
+      "isMultiGrupo": false,
+      "linhaOriginal": 16
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Boituva",
+      "cargo": "LIDER",
+      "nome": "PATRÍCIA FRANCO RODRIGUES",
+      "supervisor": "Cida",
+      "whatsapp": "15988036579",
+      "isMultiGrupo": false,
+      "linhaOriginal": 17
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Dom Pedro",
+      "cargo": "LIDER",
+      "nome": "RAPHAEL ALLAX CAMILO DOS SANTOS",
+      "supervisor": "Cida",
+      "whatsapp": "19982313317",
+      "isMultiGrupo": false,
+      "linhaOriginal": 18
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Itapetininga",
+      "cargo": "LIDER",
+      "nome": "S/LIDER (SUPERVISOR RESPONDE)",
+      "supervisor": "Cida",
+      "whatsapp": "19971336859",
+      "isMultiGrupo": false,
+      "linhaOriginal": 19
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Marília",
+      "cargo": "LIDER",
+      "nome": "ELISEU EMERSON SOARES",
+      "supervisor": "Cida",
+      "whatsapp": "14996607457",
+      "isMultiGrupo": false,
+      "linhaOriginal": 20
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Ouro Verde",
+      "cargo": "LIDER",
+      "nome": "EDSON DONIZETE FIRMINO",
+      "supervisor": "Cida",
+      "whatsapp": "19990141911",
+      "isMultiGrupo": false,
+      "linhaOriginal": 21
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Paulínia",
+      "cargo": "LIDER",
+      "nome": "JENIFFER APARECIDA SARAGOÇA PAVIN",
+      "supervisor": "Cida",
+      "whatsapp": "19995255205",
+      "isMultiGrupo": false,
+      "linhaOriginal": 22
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "São Carlos",
+      "cargo": "LIDER",
+      "nome": "S/LIDER (SUPERVISOR RESPONDE)",
+      "supervisor": "Cida",
+      "whatsapp": "19971336859",
+      "isMultiGrupo": false,
+      "linhaOriginal": 23
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Tatuí",
+      "cargo": "LIDER",
+      "nome": "ANA CLAUDIA NOGUEIRA MARTINS",
+      "supervisor": "Cida",
+      "whatsapp": "15998607101",
+      "isMultiGrupo": false,
+      "linhaOriginal": 24
+    },
+    {
+      "grupoNome": "Giga",
+      "unidadeNome": "Jundiaí",
+      "cargo": "LIDER",
+      "nome": "TACIENE LIMA DA SILVA ",
+      "supervisor": "Gislene",
+      "whatsapp": "11913283632",
+      "isMultiGrupo": false,
+      "linhaOriginal": 25
+    },
+    {
+      "grupoNome": "Profarma",
+      "unidadeNome": "São Carlos",
+      "cargo": "LIDER",
+      "nome": "João Vitor",
+      "supervisor": "Gislene",
+      "whatsapp": "16994636877",
+      "isMultiGrupo": false,
+      "linhaOriginal": 28
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Americana",
+      "cargo": "LIDER",
+      "nome": "S/LIDER (SUPERVISOR RESPONDE)",
+      "supervisor": "Gislene",
+      "whatsapp": "19989328437",
+      "isMultiGrupo": false,
+      "linhaOriginal": 30
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Pirassununga",
+      "cargo": "LIDER",
+      "nome": "PATRICIA RENATA ROSA",
+      "supervisor": "Gislene",
+      "whatsapp": "19998947266",
+      "isMultiGrupo": false,
+      "linhaOriginal": 32
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "São João",
+      "cargo": "LIDER",
+      "nome": "Eliseu",
+      "supervisor": "Gislene",
+      "whatsapp": "14996607457",
+      "isMultiGrupo": false,
+      "linhaOriginal": 33
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Varzea Paulista",
+      "cargo": "LIDER",
+      "nome": "ROSA PEREIRA DE OLIVEIRA",
+      "supervisor": "Gislene",
+      "whatsapp": "11981961780",
+      "isMultiGrupo": false,
+      "linhaOriginal": 34
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Atibaia",
+      "cargo": "LIDER",
+      "nome": "S/LIDER (SUPERVISOR RESPONDE)",
+      "supervisor": "Givaldo",
+      "whatsapp": "11962881451",
+      "isMultiGrupo": false,
+      "linhaOriginal": 37
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Bragança Paulista 1",
+      "cargo": "LIDER",
+      "nome": "S/LIDER (SUPERVISOR RESPONDE)",
+      "supervisor": "Givaldo",
+      "whatsapp": "11962881451",
+      "isMultiGrupo": false,
+      "linhaOriginal": 38
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Bragança Paulista 2",
+      "cargo": "LIDER",
+      "nome": "RAFAEL LIMA DA COSTA",
+      "supervisor": "Givaldo",
+      "whatsapp": "11910496092",
+      "isMultiGrupo": false,
+      "linhaOriginal": 39
+    },
+    {
+      "grupoNome": "Profarma",
+      "unidadeNome": "Brasilia",
+      "cargo": "LIDER",
+      "nome": "MARLENE FAVARO SILVEIRA",
+      "supervisor": "Ilan",
+      "whatsapp": "6191139393",
+      "isMultiGrupo": false,
+      "linhaOriginal": 40
+    },
+    {
+      "grupoNome": "Profarma",
+      "unidadeNome": "Brasilia Aeroporto",
+      "cargo": "LIDER",
+      "nome": "EDILENE BARROS CALASANS",
+      "supervisor": "Ilan",
+      "whatsapp": "6186377436",
+      "isMultiGrupo": false,
+      "linhaOriginal": 41
+    },
+    {
+      "grupoNome": "Profarma",
+      "unidadeNome": "Camacari",
+      "cargo": "LIDER",
+      "nome": "S/LIDER (SUPERVISOR RESPONDE)",
+      "supervisor": "Ilan",
+      "whatsapp": "7193350089",
+      "isMultiGrupo": false,
+      "linhaOriginal": 42
+    },
+    {
+      "grupoNome": "Profarma",
+      "unidadeNome": "Curitiba",
+      "cargo": "LIDER",
+      "nome": "ELSA BATISTA DA SILVA",
+      "supervisor": "Ilan",
+      "whatsapp": "4197845455",
+      "isMultiGrupo": false,
+      "linhaOriginal": 43
+    },
+    {
+      "grupoNome": "Profarma",
+      "unidadeNome": "Paraiba",
+      "cargo": "LIDER",
+      "nome": "WENIA DE SOUSA BEZERRA",
+      "supervisor": "Ilan",
+      "whatsapp": "8386713289",
+      "isMultiGrupo": false,
+      "linhaOriginal": 44
+    },
+    {
+      "grupoNome": "Profarma",
+      "unidadeNome": "Cuiabá",
+      "cargo": "SUPERVISOR",
+      "nome": "ROSIMEIRE APARECIDA GONÇALVES",
+      "supervisor": "Jucelio",
+      "whatsapp": "65992170880",
+      "isMultiGrupo": false,
+      "linhaOriginal": 56
+    },
+    {
+      "grupoNome": "Profarma",
+      "unidadeNome": "Pernambuco",
+      "cargo": "SUPERVISOR",
+      "nome": "S/LIDER (SUPERVISOR RESPONDE)",
+      "supervisor": "Marcio",
+      "whatsapp": "8199870715",
+      "isMultiGrupo": false,
+      "linhaOriginal": 61
+    },
+    {
+      "grupoNome": "Giga",
+      "cargo": "SUPERVISOR",
+      "nome": "ANDREA MARIA DE OLIVEIRA ROSENDO",
+      "supervisor": "",
+      "whatsapp": "11955896253",
+      "isMultiGrupo": false,
+      "linhaOriginal": 62
+    },
+    {
+      "grupoNome": "Giga",
+      "unidadeNome": "Geral",
+      "cargo": "SUPERVISOR",
+      "nome": "JOABE HERMISON SOARES DE SA",
+      "supervisor": "",
+      "whatsapp": "11981898217",
+      "isMultiGrupo": false,
+      "linhaOriginal": 63
+    },
+    {
+      "grupoNome": "Profarma",
+      "unidadeNome": "Cuiabá",
+      "cargo": "SUPERVISOR",
+      "nome": "JUCELIO",
+      "supervisor": "",
+      "whatsapp": "6592892502",
+      "isMultiGrupo": false,
+      "linhaOriginal": 64
+    },
+    {
+      "grupoNome": "Profarma",
+      "cargo": "SUPERVISOR",
+      "nome": "ILAN",
+      "supervisor": "",
+      "whatsapp": "7193350089",
+      "isMultiGrupo": true,
+      "gruposMultiplos": [
+        "Profarma",
+        "Mercantil",
+        "Gbarbosa",
+        "TotalAtacado"
+      ],
+      "linhaOriginal": 65
+    },
+    {
+      "grupoNome": "Mercantil",
+      "cargo": "SUPERVISOR",
+      "nome": "ILAN",
+      "supervisor": "",
+      "whatsapp": "7193350089",
+      "isMultiGrupo": true,
+      "gruposMultiplos": [
+        "Profarma",
+        "Mercantil",
+        "Gbarbosa",
+        "TotalAtacado"
+      ],
+      "linhaOriginal": 65
+    },
+    {
+      "grupoNome": "Gbarbosa",
+      "cargo": "SUPERVISOR",
+      "nome": "ILAN",
+      "supervisor": "",
+      "whatsapp": "7193350089",
+      "isMultiGrupo": true,
+      "gruposMultiplos": [
+        "Profarma",
+        "Mercantil",
+        "Gbarbosa",
+        "TotalAtacado"
+      ],
+      "linhaOriginal": 65
+    },
+    {
+      "grupoNome": "TotalAtacado",
+      "cargo": "SUPERVISOR",
+      "nome": "ILAN",
+      "supervisor": "",
+      "whatsapp": "7193350089",
+      "isMultiGrupo": true,
+      "gruposMultiplos": [
+        "Profarma",
+        "Mercantil",
+        "Gbarbosa",
+        "TotalAtacado"
+      ],
+      "linhaOriginal": 65
+    },
+    {
+      "grupoNome": "Spani",
+      "cargo": "SUPERVISOR",
+      "nome": "ADRIANA BRANDAO FERNANDES",
+      "supervisor": "",
+      "whatsapp": "11916057183",
+      "isMultiGrupo": false,
+      "linhaOriginal": 66
+    },
+    {
+      "grupoNome": "Spani",
+      "cargo": "SUPERVISOR",
+      "nome": "GIVALDO SANTANA DA PAIXÃO",
+      "supervisor": "",
+      "whatsapp": "11962881451",
+      "isMultiGrupo": true,
+      "gruposMultiplos": [
+        "Spani",
+        "Giga"
+      ],
+      "linhaOriginal": 68
+    },
+    {
+      "grupoNome": "Giga",
+      "cargo": "SUPERVISOR",
+      "nome": "GIVALDO SANTANA DA PAIXÃO",
+      "supervisor": "",
+      "whatsapp": "11962881451",
+      "isMultiGrupo": true,
+      "gruposMultiplos": [
+        "Spani",
+        "Giga"
+      ],
+      "linhaOriginal": 68
+    },
+    {
+      "grupoNome": "Spani",
+      "unidadeNome": "Geral",
+      "cargo": "SUPERVISOR",
+      "nome": "APARECIDA IZOLETE SARAGOÇA",
+      "supervisor": "",
+      "whatsapp": "19971336859",
+      "isMultiGrupo": false,
+      "linhaOriginal": 69
+    },
+    {
+      "grupoNome": "Mundial",
+      "cargo": "SUPERVISOR",
+      "nome": "LUIS PAULO LEITE DA SILVA",
+      "supervisor": "",
+      "whatsapp": "21981977597",
+      "isMultiGrupo": false,
+      "linhaOriginal": 70
+    }
+  ],
+  "errors": [
+    {
+      "linha": 26,
+      "erro": "WhatsApp inválido ou vazio: \"undefined\""
+    },
+    {
+      "linha": 27,
+      "erro": "WhatsApp inválido ou vazio: \"undefined\""
+    },
+    {
+      "linha": 29,
+      "erro": "WhatsApp inválido ou vazio: \"undefined\""
+    },
+    {
+      "linha": 31,
+      "erro": "WhatsApp inválido ou vazio: \"undefined\""
+    },
+    {
+      "linha": 35,
+      "erro": "WhatsApp inválido ou vazio: \"undefined\""
+    },
+    {
+      "linha": 36,
+      "erro": "WhatsApp inválido ou vazio: \"undefined\""
+    },
+    {
+      "linha": 45,
+      "erro": "WhatsApp inválido ou vazio: \"undefined\""
+    },
+    {
+      "linha": 46,
+      "erro": "WhatsApp inválido ou vazio: \"undefined\""
+    },
+    {
+      "linha": 47,
+      "erro": "WhatsApp inválido ou vazio: \"undefined\""
+    },
+    {
+      "linha": 48,
+      "erro": "WhatsApp inválido ou vazio: \"undefined\""
+    },
+    {
+      "linha": 49,
+      "erro": "WhatsApp inválido ou vazio: \"undefined\""
+    },
+    {
+      "linha": 50,
+      "erro": "WhatsApp inválido ou vazio: \"undefined\""
+    },
+    {
+      "linha": 51,
+      "erro": "WhatsApp inválido ou vazio: \"undefined\""
+    },
+    {
+      "linha": 52,
+      "erro": "WhatsApp inválido ou vazio: \"undefined\""
+    },
+    {
+      "linha": 53,
+      "erro": "WhatsApp inválido ou vazio: \"undefined\""
+    },
+    {
+      "linha": 54,
+      "erro": "WhatsApp inválido ou vazio: \"undefined\""
+    },
+    {
+      "linha": 55,
+      "erro": "WhatsApp inválido ou vazio: \"undefined\""
+    },
+    {
+      "linha": 57,
+      "erro": "Faltam dados obrigatórios (GRUPO, CARGO ou NOME)"
+    },
+    {
+      "linha": 58,
+      "erro": "Faltam dados obrigatórios (GRUPO, CARGO ou NOME)"
+    },
+    {
+      "linha": 59,
+      "erro": "Faltam dados obrigatórios (GRUPO, CARGO ou NOME)"
+    },
+    {
+      "linha": 60,
+      "erro": "Faltam dados obrigatórios (GRUPO, CARGO ou NOME)"
+    },
+    {
+      "linha": 67,
+      "erro": "Cargo inválido: \"NOTURNO\""
+    }
+  ],
+  "linhasMultiGrupo": [
+    {
+      "linha": 65,
+      "grupos": [
+        "Profarma",
+        "Mercantil",
+        "Gbarbosa",
+        "TotalAtacado"
+      ]
+    },
+    {
+      "linha": 68,
+      "grupos": [
+        "Spani",
+        "Giga"
+      ]
+    }
+  ],
+  "stats": {
+    "unidadesComNome": 42,
+    "unidadesSemNome": 9,
+    "porCargo": [
+      {
+        "cargo": "LIDER",
+        "count": 37
+      },
+      {
+        "cargo": "SUPERVISOR",
+        "count": 14
+      }
+    ]
+  }
+}

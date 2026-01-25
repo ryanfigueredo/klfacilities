@@ -1,0 +1,12 @@
+# Prisma generated files
+src/generated/
+src/generated/prisma/
+src/generated/prisma/runtime/
+src/generated/prisma/runtime/*.js
+src/generated/prisma/*.js
+node_modules/
+.next/
+out/
+dist/
+*.js
+*.mjs

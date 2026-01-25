@@ -1,0 +1,88 @@
+{
+  "expo": {
+    "name": "KL Colaboradores",
+    "slug": "kl-colaboradores",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.kl.colaboradores",
+      "buildNumber": "1",
+      "icon": "./assets/icon.png",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Este app precisa de acesso à câmera para tirar a selfie de registro de ponto.",
+        "NSLocationWhenInUseUsageDescription": "Este app precisa de acesso à localização para validar que você está na unidade.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Este app precisa de acesso à localização para validar que você está na unidade.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#009ee2"
+      },
+      "package": "com.kl.colaboradores",
+      "targetSdkVersion": 35,
+      "compileSdkVersion": 35,
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon-96x96.png"
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "minSdkVersion": 24,
+            "enableProguardInReleaseBuilds": false,
+            "packagingOptions": {
+              "jniLibs": {
+                "useLegacyPackaging": false
+              }
+            }
+          }
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Este app precisa de acesso à localização para validar que você está na unidade."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Este app precisa de acesso à câmera para tirar a selfie de registro de ponto.",
+          "photosPermission": false,
+          "mediaLibraryPermission": false,
+          "allowsEditing": true
+        }
+      ],
+      "expo-secure-store",
+      "./app.plugin.js"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "3a0d8776-8c53-4e8d-a984-ded6a80a9fb8"
+      }
+    }
+  }
+}
