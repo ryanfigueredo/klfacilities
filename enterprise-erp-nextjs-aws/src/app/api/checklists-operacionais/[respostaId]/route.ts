@@ -9,7 +9,7 @@ export async function GET(
   { params }: { params: Promise<{ respostaId: string }> }
 ) {
   try {
-    const me = await getCurrentUser();
+    const me = await getCurrentUser(request);
     if (!me) {
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }
@@ -109,7 +109,7 @@ export async function DELETE(
   { params }: { params: Promise<{ respostaId: string }> }
 ) {
   try {
-    const me = await getCurrentUser();
+    const me = await getCurrentUser(request);
     if (!me) {
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }
