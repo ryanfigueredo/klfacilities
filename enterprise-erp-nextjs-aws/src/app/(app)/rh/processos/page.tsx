@@ -18,6 +18,8 @@ import {
   CheckCircle,
   XCircle,
   Upload,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -151,6 +153,7 @@ export default function ProcessosJuridicosPage() {
   }>({ open: false, parcela: null, processoId: null });
   const [uploadingComprovante, setUploadingComprovante] = useState(false);
   const [marcandoPago, setMarcandoPago] = useState(false);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const [formData, setFormData] = useState({
     numeroProcesso: '',
@@ -1389,12 +1392,9 @@ export default function ProcessosJuridicosPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Número do Processo</TableHead>
-                <TableHead>Reclamante</TableHead>
-                <TableHead>Advogado</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Valor da Causa</TableHead>
-                <TableHead>Parcelas</TableHead>
+                <TableHead>Valor Parcelas Pendentes</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead></TableHead>
                 {canManage && <TableHead>Ações</TableHead>}
               </TableRow>
             </TableHeader>
@@ -1406,150 +1406,221 @@ export default function ProcessosJuridicosPage() {
                   (sum, p) => sum + p.valor,
                   0
                 );
-                const parcelaProxima = processo.parcelas?.find(p => {
-                  if (p.status === 'PAGA') return false;
-                  const status = getParcelaVencimentoStatus(p);
-                  return status.urgent;
-                });
+                const isExpanded = expandedRows.has(processo.id);
 
                 return (
-                  <TableRow key={processo.id}>
-                    <TableCell className="font-medium">
-                      {processo.numeroProcesso}
-                    </TableCell>
-                    <TableCell>{processo.reclamante || '—'}</TableCell>
-                    <TableCell>{processo.advogado || '—'}</TableCell>
-                    <TableCell>{processo.tipoProcesso || '—'}</TableCell>
-                    <TableCell>{formatCurrency(processo.valorCausa)}</TableCell>
-                    <TableCell>
-                      <div className="space-y-2">
-                        <div className="space-y-1">
-                          <div className="text-sm font-medium">
-                            {formatCurrency(totalPendente)} pendente
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {parcelasPendentes.length} parcela(s) pendente(s)
-                          </div>
-                          {parcelaProxima && (
-                            <div className="text-xs">
-                              <span className="text-red-600 font-medium">
-                                Próxima: {parcelaProxima.diaVencimento}/
-                                {parcelaProxima.mesVencimento}
-                                {parcelaProxima.anoVencimento &&
-                                  `/${parcelaProxima.anoVencimento}`}
-                                {' - '}
-                                {getParcelaVencimentoStatus(parcelaProxima).text}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        {canMarcarPagamento && processo.parcelas && processo.parcelas.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            {processo.parcelas.slice(0, 3).map((parcela) => (
-                              <Button
-                                key={parcela.id}
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleOpenParcelaPagamento(parcela, processo.id)}
-                                className="text-xs h-7"
-                                title={`Gerenciar pagamento da parcela de ${formatCurrency(parcela.valor)}`}
-                              >
-                                {parcela.status === 'PAGA' ? (
-                                  <CheckCircle className="h-3 w-3 mr-1 text-green-600" />
-                                ) : (
-                                  <DollarSign className="h-3 w-3 mr-1" />
-                                )}
-                                {formatCurrency(parcela.valor)}
-                              </Button>
-                            ))}
-                            {processo.parcelas.length > 3 && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  // Abrir primeira parcela pendente ou primeira parcela
-                                  const primeiraParcela = processo.parcelas?.[0];
-                                  if (primeiraParcela) {
-                                    handleOpenParcelaPagamento(primeiraParcela, processo.id);
-                                  }
-                                }}
-                                className="text-xs h-7"
-                              >
-                                +{processo.parcelas.length - 3} mais
-                              </Button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        className={
-                          STATUS_LABELS[processo.status]?.color ||
-                          'bg-gray-100 text-gray-800'
-                        }
-                      >
-                        {STATUS_LABELS[processo.status]?.label ||
-                          processo.status}
-                      </Badge>
-                    </TableCell>
-                    {canManage && (
+                  <>
+                    <TableRow key={processo.id}>
+                      <TableCell className="font-medium">
+                        {processo.numeroProcesso}
+                      </TableCell>
                       <TableCell>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleOpenDialog(processo)}
-                            title="Editar"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <AlertDialog
-                            open={deletingProcesso?.id === processo.id}
-                            onOpenChange={open => {
-                              if (!open) setDeletingProcesso(null);
-                            }}
-                          >
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setDeletingProcesso(processo)}
-                                title="Excluir"
-                              >
-                                <Trash2 className="h-4 w-4 text-red-600" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>
-                                  Confirmar exclusão
-                                </AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Tem certeza que deseja excluir o processo{' '}
-                                  <strong>{processo.numeroProcesso}</strong>?
-                                  Esta ação não pode ser desfeita.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel
-                                  onClick={() => setDeletingProcesso(null)}
-                                >
-                                  Cancelar
-                                </AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={handleDelete}
-                                  className="bg-red-600 hover:bg-red-700"
-                                >
-                                  Excluir
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                        <div className="text-sm font-medium">
+                          {formatCurrency(totalPendente)}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {parcelasPendentes.length} parcela(s) pendente(s)
                         </div>
                       </TableCell>
+                      <TableCell>
+                        <Badge
+                          className={
+                            STATUS_LABELS[processo.status]?.color ||
+                            'bg-gray-100 text-gray-800'
+                          }
+                        >
+                          {STATUS_LABELS[processo.status]?.label ||
+                            processo.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            const newExpanded = new Set(expandedRows);
+                            if (isExpanded) {
+                              newExpanded.delete(processo.id);
+                            } else {
+                              newExpanded.add(processo.id);
+                            }
+                            setExpandedRows(newExpanded);
+                          }}
+                          className="h-8 px-2"
+                        >
+                          {isExpanded ? (
+                            <>
+                              <ChevronUp className="h-4 w-4 mr-1" />
+                              Ver menos
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown className="h-4 w-4 mr-1" />
+                              Ver mais
+                            </>
+                          )}
+                        </Button>
+                      </TableCell>
+                      {canManage && (
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleOpenDialog(processo)}
+                              title="Editar"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <AlertDialog
+                              open={deletingProcesso?.id === processo.id}
+                              onOpenChange={open => {
+                                if (!open) setDeletingProcesso(null);
+                              }}
+                            >
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setDeletingProcesso(processo)}
+                                  title="Excluir"
+                                >
+                                  <Trash2 className="h-4 w-4 text-red-600" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>
+                                    Confirmar exclusão
+                                  </AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Tem certeza que deseja excluir o processo{' '}
+                                    <strong>{processo.numeroProcesso}</strong>?
+                                    Esta ação não pode ser desfeita.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel
+                                    onClick={() => setDeletingProcesso(null)}
+                                  >
+                                    Cancelar
+                                  </AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={handleDelete}
+                                    className="bg-red-600 hover:bg-red-700"
+                                  >
+                                    Excluir
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                    {isExpanded && (
+                      <TableRow>
+                        <TableCell colSpan={canManage ? 5 : 4} className="bg-gray-50">
+                          <div className="p-4 space-y-4">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                              <div>
+                                <div className="text-xs font-medium text-gray-500 mb-1">
+                                  Reclamante
+                                </div>
+                                <div className="text-sm">{processo.reclamante || '—'}</div>
+                              </div>
+                              <div>
+                                <div className="text-xs font-medium text-gray-500 mb-1">
+                                  Advogado
+                                </div>
+                                <div className="text-sm">{processo.advogado || '—'}</div>
+                              </div>
+                              <div>
+                                <div className="text-xs font-medium text-gray-500 mb-1">
+                                  Tipo
+                                </div>
+                                <div className="text-sm">{processo.tipoProcesso || '—'}</div>
+                              </div>
+                              <div>
+                                <div className="text-xs font-medium text-gray-500 mb-1">
+                                  Valor da Causa
+                                </div>
+                                <div className="text-sm">{formatCurrency(processo.valorCausa)}</div>
+                              </div>
+                            </div>
+                            
+                            {processo.parcelas && processo.parcelas.length > 0 && (
+                              <div className="border-t pt-4">
+                                <div className="text-sm font-semibold mb-3">
+                                  Parcelas ({processo.parcelas.length})
+                                </div>
+                                <div className="space-y-2">
+                                  {processo.parcelas.map((parcela) => {
+                                    const status = getParcelaVencimentoStatus(parcela);
+                                    const parcelaVencimento = new Date(
+                                      parcela.anoVencimento || new Date().getFullYear(),
+                                      parcela.mesVencimento - 1,
+                                      parcela.diaVencimento
+                                    );
+                                    
+                                    return (
+                                      <div
+                                        key={parcela.id}
+                                        className="flex items-center justify-between p-3 bg-white rounded border border-gray-200"
+                                      >
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-3">
+                                            <div className="text-sm font-medium">
+                                              {formatCurrency(parcela.valor)}
+                                            </div>
+                                            <div className="text-xs text-gray-500">
+                                              Vencimento: {format(parcelaVencimento, 'dd/MM/yyyy', { locale: ptBR })}
+                                            </div>
+                                            <Badge
+                                              className={
+                                                parcela.status === 'PAGA'
+                                                  ? 'bg-green-100 text-green-800'
+                                                  : parcela.status === 'VENCIDA'
+                                                  ? 'bg-red-100 text-red-800'
+                                                  : status.urgent
+                                                  ? 'bg-yellow-100 text-yellow-800'
+                                                  : 'bg-gray-100 text-gray-800'
+                                              }
+                                            >
+                                              {parcela.status === 'PAGA'
+                                                ? 'Paga'
+                                                : parcela.status === 'VENCIDA'
+                                                ? 'Vencida'
+                                                : status.text}
+                                            </Badge>
+                                          </div>
+                                        </div>
+                                        {canMarcarPagamento && (
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => handleOpenParcelaPagamento(parcela, processo.id)}
+                                            className="ml-4"
+                                          >
+                                            {parcela.status === 'PAGA' ? (
+                                              <CheckCircle className="h-4 w-4 mr-1 text-green-600" />
+                                            ) : (
+                                              <DollarSign className="h-4 w-4 mr-1" />
+                                            )}
+                                            Gerenciar
+                                          </Button>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
                     )}
-                  </TableRow>
+                  </>
                 );
               })}
             </TableBody>
