@@ -384,8 +384,25 @@ export default function ResponderChecklistScreen() {
   const carregarEscopo = useCallback(async () => {
     if (!escopoId) {
       setLoading(false);
-      Alert.alert("Erro", "Checklist inválido. Volte e tente novamente.");
-      navigation.goBack();
+      Alert.alert("Erro", "Checklist inválido. Volte e tente novamente.", [
+        {
+          text: "OK",
+          onPress: () => {
+            setTimeout(() => {
+              try {
+                navigation.goBack();
+              } catch (navError) {
+                console.error("Erro ao navegar:", navError);
+                try {
+                  navigation.navigate("Checklists" as never);
+                } catch (fallbackError) {
+                  console.error("Erro no fallback:", fallbackError);
+                }
+              }
+            }, 100);
+          },
+        },
+      ]);
       return;
     }
     try {
@@ -736,8 +753,31 @@ export default function ResponderChecklistScreen() {
       }
     } catch (error: any) {
       console.error("Erro ao carregar escopo:", error);
-      Alert.alert("Erro", "Não foi possível carregar o checklist.");
-      navigation.goBack();
+      
+      let errorMessage = "Não foi possível carregar o checklist.";
+      if (error?.response?.status === 401) {
+        errorMessage = "Sessão expirada. Faça login novamente.";
+      } else if (error?.response?.status === 404) {
+        errorMessage = "Checklist não encontrado. Ele pode ter sido removido.";
+      } else if (error?.code === "NETWORK_ERROR" || error?.message?.includes("Network")) {
+        errorMessage = "Erro de conexão. Verifique sua internet e tente novamente.";
+      }
+      
+      Alert.alert("Erro", errorMessage, [
+        {
+          text: "OK",
+          onPress: () => {
+            // Aguardar um pouco antes de navegar para evitar crash
+            setTimeout(() => {
+              try {
+                navigation.goBack();
+              } catch (navError) {
+                console.error("Erro ao navegar:", navError);
+              }
+            }, 100);
+          },
+        },
+      ]);
     } finally {
       setLoading(false);
       initialLoadDoneRef.current = true;
@@ -875,6 +915,7 @@ export default function ResponderChecklistScreen() {
             const boolVal = booleanAnswers[pergunta.id];
             if (boolVal !== null && boolVal !== undefined) {
               resposta.valorBoolean = boolVal === "CONFORME";
+              resposta.valorOpcao = boolVal; // Incluir também como valorOpcao para compatibilidade
 
               // Adicionar observação se não conforme
               if (
@@ -887,6 +928,8 @@ export default function ResponderChecklistScreen() {
                   naoConformeDetails[pergunta.id].resolucao
                 }`;
               }
+              
+              console.log(`[prepararRespostas] ✅ BOOLEANO - perguntaId: ${pergunta.id}, valorBoolean: ${resposta.valorBoolean}, valorOpcao: ${resposta.valorOpcao}`);
             }
             break;
           case "NUMERICO":
@@ -925,7 +968,8 @@ export default function ResponderChecklistScreen() {
           resposta.nota = notaAnswers[pergunta.id]!;
         }
 
-        // Processar fotos anexadas (para todas as perguntas)
+        // Processar fotos anexadas (para todas as perguntas que permitem anexar foto)
+        // IMPORTANTE: Sempre processar fotos anexadas, mesmo quando a resposta é CONFORME
         const fotosAnexadas = photoAnswers[`${pergunta.id}_anexo`] || [];
         if (fotosAnexadas.length > 0) {
           // Verificar se são URLs já salvas ou fotos locais
@@ -934,7 +978,17 @@ export default function ResponderChecklistScreen() {
           );
           if (todasSalvas) {
             // Se todas são URLs, incluir no JSON
-            resposta.fotoUrl = JSON.stringify(fotosAnexadas);
+            // Se já tem fotoUrl (de tipo FOTO), combinar com anexadas
+            if (resposta.fotoUrl) {
+              try {
+                const fotosExistentes = JSON.parse(resposta.fotoUrl);
+                resposta.fotoUrl = JSON.stringify([...fotosExistentes, ...fotosAnexadas]);
+              } catch {
+                resposta.fotoUrl = JSON.stringify([resposta.fotoUrl, ...fotosAnexadas]);
+              }
+            } else {
+              resposta.fotoUrl = JSON.stringify(fotosAnexadas);
+            }
           }
           // Se são locais, serão enviadas via FormData e não precisam estar no JSON
           // Mas ainda precisamos incluir a resposta para que a API processe as fotos
@@ -958,6 +1012,7 @@ export default function ResponderChecklistScreen() {
 
         // IMPORTANTE: Para rascunhos, sempre incluir a resposta se houver qualquer dado
         // Isso garante que as respostas sejam salvas mesmo que não estejam "completas"
+        // CRÍTICO: Incluir resposta mesmo se só tiver fotos anexadas (para garantir que fotos sejam salvas)
         const temQualquerDado =
           resposta.valorTexto ||
           resposta.valorBoolean !== undefined ||
@@ -968,7 +1023,13 @@ export default function ResponderChecklistScreen() {
           temFotosLocaisAnexadas ||
           temFotosLocaisPrincipais;
 
-        if (temQualquerDado) {
+        // CRÍTICO: Para respostas BOOLEANO, SEMPRE incluir se tiver valorBoolean definido
+        // Isso garante que respostas CONFORME sejam salvas mesmo sem fotos
+        const isBooleanComValor = pergunta.tipo === "BOOLEANO" && resposta.valorBoolean !== undefined;
+        
+        // CRÍTICO: Se tem fotos anexadas locais, SEMPRE incluir a resposta para garantir que sejam enviadas
+        // CRÍTICO: Se é BOOLEANO com valor, SEMPRE incluir mesmo sem fotos
+        if (temQualquerDado || temFotosLocaisAnexadas || temFotosLocaisPrincipais || isBooleanComValor) {
           respostas.push(resposta);
           console.log(
             `[prepararRespostas] ✅ Resposta adicionada - perguntaId: ${
@@ -977,7 +1038,7 @@ export default function ResponderChecklistScreen() {
               resposta.valorBoolean !== undefined
             }, valorBoolean: ${resposta.valorBoolean}, temNota: ${
               resposta.nota !== undefined
-            }`
+            }, temFotosAnexadas: ${fotosAnexadas.length > 0}, temFotosLocaisAnexadas: ${temFotosLocaisAnexadas}, temFotosLocaisPrincipais: ${temFotosLocaisPrincipais}, isBooleanComValor: ${isBooleanComValor}`
           );
         } else {
           // Se não tem dados mas tem nota, incluir apenas a nota
@@ -1066,6 +1127,7 @@ export default function ResponderChecklistScreen() {
         };
 
         // Preparar fotos para salvar (formato compatível com sincronização)
+        // CRÍTICO: Sempre incluir fotos anexadas, mesmo quando resposta é CONFORME
         const grupos = escopo.escopo.template.grupos;
         for (const grupo of grupos) {
           for (const pergunta of grupo.perguntas) {
@@ -1078,14 +1140,15 @@ export default function ResponderChecklistScreen() {
                 name: `foto_${pergunta.id}.jpg`,
               }));
             }
-            // Fotos anexadas
-            if (photoAnswers[`${pergunta.id}_anexo`]) {
+            // Fotos anexadas - SEMPRE incluir se existirem, independente do tipo de pergunta ou resposta
+            // Isso garante que fotos sejam salvas mesmo quando marca como CONFORME
+            if (photoAnswers[`${pergunta.id}_anexo`] && photoAnswers[`${pergunta.id}_anexo`].length > 0) {
               const fotosAnexadas = photoAnswers[`${pergunta.id}_anexo`];
               draftData.fotos[`foto_anexada_${pergunta.id}`] =
-                fotosAnexadas.map((fotoUri) => ({
+                fotosAnexadas.map((fotoUri, index) => ({
                   uri: fotoUri,
                   type: "image/jpeg",
-                  name: `foto_anexada_${pergunta.id}.jpg`,
+                  name: `foto_anexada_${pergunta.id}_${index}.jpg`,
                 }));
             }
           }
@@ -1133,11 +1196,13 @@ export default function ResponderChecklistScreen() {
         formData.append("answers", answersJson);
 
         // Coletar fotos, comprimir em paralelo e adicionar ao FormData (evita 413)
+        // CRÍTICO: Garantir que TODAS as fotos sejam coletadas, incluindo anexadas
         const photoEntries: { formKey: string; uri: string; type: string; name: string }[] = [];
         for (const [key, fotos] of Object.entries(draftData.fotos)) {
-          if (Array.isArray(fotos)) {
+          if (Array.isArray(fotos) && fotos.length > 0) {
             fotos.forEach((foto: any, index: number) => {
               if (
+                foto &&
                 foto.uri &&
                 (foto.uri.startsWith("file://") ||
                   foto.uri.startsWith("content://") ||
@@ -1161,6 +1226,10 @@ export default function ResponderChecklistScreen() {
             });
           }
         }
+        
+        console.log(`[salvarRascunho] 📸 Fotos coletadas para upload: ${photoEntries.length}`, {
+          photoEntries: photoEntries.map(e => ({ formKey: e.formKey, name: e.name }))
+        });
         const compressed = await Promise.all(
           photoEntries.map(async (e) => ({
             ...e,
@@ -1282,6 +1351,7 @@ export default function ResponderChecklistScreen() {
     if (!initialLoadDoneRef.current || !escopo || rascunhoId === null || salvandoRascunho) return;
 
     // Verificar se há qualquer resposta ou foto
+    // CRÍTICO: Incluir booleanAnswers mesmo que seja apenas CONFORME
     const hasAnyAnswer =
       Object.keys(textAnswers).length > 0 ||
       Object.keys(booleanAnswers).length > 0 ||
@@ -1290,6 +1360,19 @@ export default function ResponderChecklistScreen() {
       Object.keys(photoAnswers).length > 0 ||
       Object.keys(notaAnswers).length > 0 ||
       observacoes.trim().length > 0;
+
+    // Log para debug
+    if (__DEV__ && hasAnyAnswer) {
+      console.log(`[auto-save] 📝 Tem respostas para salvar:`, {
+        textAnswers: Object.keys(textAnswers).length,
+        booleanAnswers: Object.keys(booleanAnswers).length,
+        numericAnswers: Object.keys(numericAnswers).length,
+        selectAnswers: Object.keys(selectAnswers).length,
+        photoAnswers: Object.keys(photoAnswers).length,
+        notaAnswers: Object.keys(notaAnswers).length,
+        observacoes: observacoes.trim().length,
+      });
+    }
 
     if (!hasAnyAnswer) return;
 
@@ -1467,16 +1550,26 @@ export default function ResponderChecklistScreen() {
 
       const formData = new FormData();
       formData.append("escopoId", escopo.escopo.id);
-      formData.append("respostaId", rascunhoId);
+      // IMPORTANTE: Enviar respostaId apenas se for atualizar rascunho existente
+      // Se não tiver respostaId, a API criará uma nova resposta
+      if (rascunhoId) {
+        formData.append("respostaId", rascunhoId);
+      }
       formData.append("isDraft", "false");
-      formData.append("observacoes", observacoes);
+      
+      // Observações (só enviar se não estiver vazio)
+      if (observacoes && observacoes.trim()) {
+        formData.append("observacoes", observacoes.trim());
+      }
 
+      // Localização
       if (loc) {
         formData.append("lat", String(loc.coords.latitude));
         formData.append("lng", String(loc.coords.longitude));
         formData.append("accuracy", String(loc.coords.accuracy || 0));
       }
 
+      // Preparar respostas ANTES de coletar fotos para garantir que todas sejam incluídas
       const respostas = prepararRespostas();
 
       console.log("📋 Finalizando checklist - Respostas preparadas:", {
@@ -1516,23 +1609,31 @@ export default function ResponderChecklistScreen() {
         } as any);
       }
 
-      // Coletar fotos, comprimir em paralelo e adicionar ao FormData (evita 413)
+      // Coletar TODAS as fotos (principais e anexadas) de TODAS as perguntas
+      // CRÍTICO: Processar igual ao web - coletar todas antes de comprimir
       const photoEntries: {
         formKey: string;
         uri: string;
         name: string;
+        perguntaId: string;
+        tipo: 'principal' | 'anexada';
       }[] = [];
+      
       const grupos = escopo.escopo.template.grupos;
       for (const grupo of grupos) {
         for (const pergunta of grupo.perguntas) {
-          if (pergunta.tipo === "FOTO" && photoAnswers[pergunta.id]) {
+          // 1. Fotos principais (tipo FOTO)
+          if (pergunta.tipo === "FOTO" && photoAnswers[pergunta.id] && photoAnswers[pergunta.id].length > 0) {
             const fotos = photoAnswers[pergunta.id];
             const permiteMultiplas = pergunta.permiteMultiplasFotos ?? false;
+            
             fotos.forEach((fotoUri: string, index: number) => {
+              // Só coletar fotos locais (não URLs já salvas)
               if (
-                fotoUri.startsWith("file://") ||
-                fotoUri.startsWith("content://") ||
-                fotoUri.startsWith("/")
+                fotoUri &&
+                (fotoUri.startsWith("file://") ||
+                  fotoUri.startsWith("content://") ||
+                  fotoUri.startsWith("/"))
               ) {
                 const formKey = permiteMultiplas
                   ? `foto_${pergunta.id}_${index}`
@@ -1543,40 +1644,97 @@ export default function ResponderChecklistScreen() {
                   name: permiteMultiplas
                     ? `foto_${pergunta.id}_${index}.jpg`
                     : `foto_${pergunta.id}.jpg`,
+                  perguntaId: pergunta.id,
+                  tipo: 'principal',
                 });
+                if (__DEV__) {
+                  console.log(`[finalizarChecklist] 📸 Foto principal coletada: perguntaId=${pergunta.id}, index=${index}, formKey=${formKey}`);
+                }
               }
             });
           }
-          if (photoAnswers[`${pergunta.id}_anexo`]) {
+          
+          // 2. Fotos anexadas (para TODAS as perguntas, independente do tipo)
+          // CRÍTICO: Sempre coletar fotos anexadas, mesmo quando resposta é CONFORME
+          if (photoAnswers[`${pergunta.id}_anexo`] && photoAnswers[`${pergunta.id}_anexo`].length > 0) {
             const fotosAnexadas = photoAnswers[`${pergunta.id}_anexo`];
             fotosAnexadas.forEach((fotoUri: string, index: number) => {
+              // Só coletar fotos locais (não URLs já salvas)
               if (
-                fotoUri.startsWith("file://") ||
-                fotoUri.startsWith("content://") ||
-                fotoUri.startsWith("/")
+                fotoUri &&
+                (fotoUri.startsWith("file://") ||
+                  fotoUri.startsWith("content://") ||
+                  fotoUri.startsWith("/"))
               ) {
                 photoEntries.push({
                   formKey: `foto_anexada_${pergunta.id}_${index}`,
                   uri: fotoUri,
                   name: `foto_anexada_${pergunta.id}_${index}.jpg`,
+                  perguntaId: pergunta.id,
+                  tipo: 'anexada',
                 });
+                if (__DEV__) {
+                  console.log(`[finalizarChecklist] 📸 Foto anexada coletada: perguntaId=${pergunta.id}, index=${index}`);
+                }
               }
             });
           }
         }
       }
-      const compressedPhotos = await Promise.all(
-        photoEntries.map(async (e) => ({
-          ...e,
-          uri: (await compressImageForUpload(e.uri)).uri,
-        }))
-      );
-      for (const e of compressedPhotos) {
-        formData.append(e.formKey, {
-          uri: e.uri,
-          type: "image/jpeg",
-          name: e.name,
-        } as any);
+      
+      if (__DEV__) {
+        console.log(`[finalizarChecklist] 📊 Total de fotos coletadas: ${photoEntries.length}`, {
+          principais: photoEntries.filter(e => e.tipo === 'principal').length,
+          anexadas: photoEntries.filter(e => e.tipo === 'anexada').length,
+        });
+      }
+      // Comprimir TODAS as fotos em paralelo (igual ao web)
+      // CRÍTICO: Comprimir todas antes de adicionar ao FormData para evitar 413
+      if (photoEntries.length > 0) {
+        if (__DEV__) {
+          console.log(`[finalizarChecklist] 🔄 Comprimindo ${photoEntries.length} fotos...`);
+        }
+        
+        const compressedPhotos = await Promise.all(
+          photoEntries.map(async (e) => {
+            try {
+              const compressed = await compressImageForUpload(e.uri);
+              return {
+                ...e,
+                uri: compressed.uri,
+              };
+            } catch (error) {
+              console.error(`[finalizarChecklist] ❌ Erro ao comprimir foto ${e.formKey}:`, error);
+              // Em caso de erro, usar foto original (pode causar 413, mas melhor que perder a foto)
+              return e;
+            }
+          })
+        );
+        
+        // Adicionar fotos comprimidas ao FormData
+        for (const e of compressedPhotos) {
+          if (e.uri) {
+            formData.append(e.formKey, {
+              uri: e.uri,
+              type: "image/jpeg",
+              name: e.name,
+            } as any);
+            if (__DEV__) {
+              console.log(`[finalizarChecklist] ✅ Foto adicionada ao FormData: ${e.formKey} (${e.name})`);
+            }
+          }
+        }
+        
+        if (__DEV__) {
+          console.log(`[finalizarChecklist] 📸 Total de fotos no FormData: ${compressedPhotos.length}`, {
+            principais: compressedPhotos.filter(e => e.tipo === 'principal').length,
+            anexadas: compressedPhotos.filter(e => e.tipo === 'anexada').length,
+          });
+        }
+      } else {
+        if (__DEV__) {
+          console.log(`[finalizarChecklist] ℹ️ Nenhuma foto local para enviar (todas já estão salvas como URLs)`);
+        }
       }
 
       // Obter token de autenticação
@@ -1589,6 +1747,19 @@ export default function ResponderChecklistScreen() {
       // Adicionar token de autenticação se existir
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      // Log final antes de enviar
+      if (__DEV__) {
+        console.log(`[finalizarChecklist] 🚀 Enviando checklist:`, {
+          escopoId: escopo.escopo.id,
+          respostaId: rascunhoId || 'nova',
+          totalRespostas: respostas.length,
+          totalFotos: photoEntries.length,
+          temAssinaturaGerente: !!assinaturaGerenteDataUrl,
+          temSelfieSupervisor: !!selfieSupervisorUri,
+          temLocalizacao: !!loc,
+        });
       }
 
       const response = await fetch(
@@ -1606,36 +1777,85 @@ export default function ResponderChecklistScreen() {
           status: response.status,
           statusText: response.statusText,
           errorData,
+          escopoId: escopo.escopo.id,
+          respostaId: rascunhoId,
+          totalRespostas: respostas.length,
+          totalFotos: photoEntries.length,
         });
-        throw new Error(
-          errorData.error || errorData.message || "Erro ao finalizar checklist"
-        );
+        
+        // Mensagem de erro mais detalhada
+        let errorMessage = "Erro ao finalizar checklist";
+        if (errorData?.message) {
+          errorMessage = errorData.message;
+        } else if (errorData?.error) {
+          errorMessage = errorData.error;
+        } else if (response.status === 413) {
+          errorMessage = "O checklist é muito grande. Tente reduzir o número de fotos.";
+        } else if (response.status === 422) {
+          errorMessage = "Dados inválidos. Verifique se todas as perguntas obrigatórias foram respondidas.";
+        } else if (response.status === 401) {
+          errorMessage = "Sessão expirada. Faça login novamente.";
+        }
+        
+        throw new Error(errorMessage);
+      }
+      
+      const result = await response.json().catch(() => ({}));
+      
+      if (__DEV__) {
+        console.log(`[finalizarChecklist] ✅ Checklist finalizado com sucesso!`, {
+          respostaId: result?.resposta?.id || result?.id,
+          protocolo: result?.protocolo,
+        });
       }
 
       Alert.alert("Sucesso", "Checklist finalizado com sucesso!", [
         {
           text: "OK",
           onPress: () => {
-            // Evitar crash no iOS: deferir fechamento do modal e navegação
+            // Evitar crash: deferir fechamento do modal e navegação
             // até o Alert ter sido totalmente dispensado.
             setTimeout(() => {
               try {
                 setShowAssinaturaModal(false);
-                navigation.goBack();
+                // Aguardar um pouco mais para garantir que o modal foi fechado
+                setTimeout(() => {
+                  try {
+                    navigation.goBack();
+                  } catch (navError) {
+                    console.error("Erro ao navegar:", navError);
+                    // Fallback: tentar navegar para a tela de checklists
+                    try {
+                      navigation.navigate("Checklists" as never);
+                    } catch (fallbackError) {
+                      console.error("Erro no fallback de navegação:", fallbackError);
+                    }
+                  }
+                }, 100);
               } catch (e) {
-                if (__DEV__) console.warn("Erro ao fechar após sucesso:", e);
+                console.error("Erro ao fechar modal:", e);
               }
-            }, 150);
+            }, 200);
           },
         },
       ]);
     } catch (error: any) {
       console.error("Erro ao finalizar checklist:", error);
-      Alert.alert(
-        "Erro",
-        error?.message ||
-          "Não foi possível finalizar o checklist. Verifique sua conexão e tente novamente."
-      );
+      
+      // Não fechar o modal em caso de erro - deixar o usuário tentar novamente
+      let errorMessage = "Não foi possível finalizar o checklist.";
+      
+      if (error?.message) {
+        errorMessage = error.message;
+      } else if (error?.response?.status === 413) {
+        errorMessage = "O checklist é muito grande. Tente reduzir o número de fotos.";
+      } else if (error?.response?.status === 401) {
+        errorMessage = "Sessão expirada. Faça login novamente.";
+      } else if (error?.code === "NETWORK_ERROR" || error?.message?.includes("Network")) {
+        errorMessage = "Erro de conexão. Verifique sua internet e tente novamente.";
+      }
+      
+      Alert.alert("Erro", errorMessage);
     } finally {
       setEnviando(false);
     }
@@ -1947,7 +2167,9 @@ export default function ResponderChecklistScreen() {
 
                   {/* Campo para anexar foto em perguntas que NÃO são do tipo FOTO */}
                   {/* Se a pergunta já é do tipo FOTO, não mostrar o campo de anexo separado */}
-                  {pergunta.tipo !== "FOTO" && (
+                  {/* Mostrar se permiteAnexarFoto for true OU undefined (padrão: permitir) */}
+                  {/* Só ocultar se for explicitamente false */}
+                  {pergunta.tipo !== "FOTO" && pergunta.permiteAnexarFoto !== false && (
                     <View style={styles.anexoFotoContainer}>
                       <Text style={styles.anexoFotoLabel}>
                         Anexar foto (opcional)
