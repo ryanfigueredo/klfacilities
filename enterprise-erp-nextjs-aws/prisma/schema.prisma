@@ -123,6 +123,7 @@ model User {
   registrosPontoEditados        RegistroPonto[]                  @relation("RegistroPontoEditadoPor")
   manifestacoesRespondidas      ManifestacaoFuncionario[]        @relation("ManifestacaoRespondidaPor")
   processosJuridicos            ProcessoJuridico[]
+  parcelasMarcadasComoPagas     ParcelaProcesso[]
   solicitacoesExclusao          SolicitacaoExclusaoColaborador[] @relation("SolicitacoesExclusao")
   aprovacoesExclusao            SolicitacaoExclusaoColaborador[] @relation("SolicitacoesAprovacao")
   supervisorScopes              SupervisorScope[]
@@ -1225,6 +1226,12 @@ model ProcessoJuridico {
   observacoes    String? // Observações gerais
   status         StatusProcesso @default(EM_ANDAMENTO)
   arquivosUrl    String[]       @default([]) // URLs de documentos anexos (S3)
+  // Campos de custas e pagamentos
+  custasProcessuais          Decimal? // Custas processuais
+  contribuicoesPrevidenciarias Decimal? // Contribuições previdenciárias
+  honorariosPericiais        Decimal? // Honorários periciais
+  dadosPagamento             String? // Dados de pagamento (JSON ou texto livre)
+  contasBancarias             String? // Contas bancárias (JSON ou texto livre)
   criadoPorId    String
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
@@ -1248,10 +1255,16 @@ model ParcelaProcesso {
   notificadoEm       DateTime? // Quando foi enviado o alerta de 2 dias
   pagoEm             DateTime? // Quando foi marcado como pago
   observacoes        String?
+  // Campos de pagamento
+  comprovantePagamentoUrl String? // URL do comprovante de pagamento (S3)
+  marcadoComoPagoPor      String? // ID do usuário que marcou como pago
+  marcadoComoPagoEm        DateTime? // Data/hora em que foi marcado como pago
+  naoPago                  Boolean @default(false) // Flag para marcar como não pago
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
   processoJuridico ProcessoJuridico @relation(fields: [processoJuridicoId], references: [id], onDelete: Cascade)
+  marcadoPor        User?            @relation(fields: [marcadoComoPagoPor], references: [id])
 
   @@index([processoJuridicoId])
   @@index([status])

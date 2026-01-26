@@ -34,6 +34,11 @@ export const appNavSections: NavSection[] = [
         label: 'Provisionamento',
         roles: ['MASTER', 'ADMIN'],
       },
+      {
+        href: '/rh/processos',
+        label: 'Processos Jurídicos',
+        roles: ['MASTER', 'ADMIN', 'RH', 'JURIDICO'],
+      },
     ],
   },
   {
@@ -44,7 +49,6 @@ export const appNavSections: NavSection[] = [
         label: 'Avaliações',
         roles: [
           'MASTER',
-          'ADMIN',
           'SUPERVISOR',
           'OPERACIONAL',
           'PLANEJAMENTO_ESTRATEGICO',
@@ -55,7 +59,6 @@ export const appNavSections: NavSection[] = [
         label: 'Incidentes',
         roles: [
           'MASTER',
-          'ADMIN',
           'SUPERVISOR',
           'OPERACIONAL',
           'PLANEJAMENTO_ESTRATEGICO',
@@ -66,7 +69,6 @@ export const appNavSections: NavSection[] = [
             label: 'Lista de Incidentes',
             roles: [
               'MASTER',
-              'ADMIN',
               'SUPERVISOR',
               'OPERACIONAL',
               'PLANEJAMENTO_ESTRATEGICO',
@@ -77,7 +79,6 @@ export const appNavSections: NavSection[] = [
             label: 'Clientes Finais',
             roles: [
               'MASTER',
-              'ADMIN',
               'OPERACIONAL',
               'PLANEJAMENTO_ESTRATEGICO',
             ],
@@ -87,7 +88,6 @@ export const appNavSections: NavSection[] = [
             label: 'Categorias',
             roles: [
               'MASTER',
-              'ADMIN',
               'OPERACIONAL',
               'PLANEJAMENTO_ESTRATEGICO',
             ],
@@ -99,7 +99,6 @@ export const appNavSections: NavSection[] = [
         label: 'Checklists Operacionais',
         roles: [
           'MASTER',
-          'ADMIN',
           'OPERACIONAL',
           'SUPERVISOR',
           'PLANEJAMENTO_ESTRATEGICO',
@@ -110,7 +109,6 @@ export const appNavSections: NavSection[] = [
             label: 'Dashboard',
             roles: [
               'MASTER',
-              'ADMIN',
               'OPERACIONAL',
               'SUPERVISOR',
               'PLANEJAMENTO_ESTRATEGICO',
@@ -121,7 +119,6 @@ export const appNavSections: NavSection[] = [
             label: 'Respondidos',
             roles: [
               'MASTER',
-              'ADMIN',
               'OPERACIONAL',
               'PLANEJAMENTO_ESTRATEGICO',
             ],
@@ -138,7 +135,6 @@ export const appNavSections: NavSection[] = [
         label: 'Controle de Gasolina',
         roles: [
           'MASTER',
-          'ADMIN',
           'SUPERVISOR',
           'OPERACIONAL',
           'PLANEJAMENTO_ESTRATEGICO',
@@ -149,7 +145,6 @@ export const appNavSections: NavSection[] = [
             label: 'Painel',
             roles: [
               'MASTER',
-              'ADMIN',
               'SUPERVISOR',
               'OPERACIONAL',
               'PLANEJAMENTO_ESTRATEGICO',
@@ -160,7 +155,6 @@ export const appNavSections: NavSection[] = [
             label: 'Registrar Rota',
             roles: [
               'MASTER',
-              'ADMIN',
               'SUPERVISOR',
               'OPERACIONAL',
               'PLANEJAMENTO_ESTRATEGICO',
@@ -171,7 +165,6 @@ export const appNavSections: NavSection[] = [
             label: 'Admin',
             roles: [
               'MASTER',
-              'ADMIN',
               'OPERACIONAL',
               'PLANEJAMENTO_ESTRATEGICO',
             ],
@@ -183,7 +176,6 @@ export const appNavSections: NavSection[] = [
         label: 'Ponto Digital',
         roles: [
           'MASTER',
-          'ADMIN',
           'RH',
           'OPERACIONAL',
           'SUPERVISOR',
@@ -193,14 +185,13 @@ export const appNavSections: NavSection[] = [
           {
             href: '/ponto/supervisor',
             label: 'Gerenciar Pontos',
-            roles: ['MASTER', 'ADMIN', 'SUPERVISOR', 'OPERACIONAL', 'RH'],
+            roles: ['MASTER', 'SUPERVISOR', 'OPERACIONAL', 'RH'],
           },
           {
             href: '/ponto/admin',
             label: 'Admin',
             roles: [
               'MASTER',
-              'ADMIN',
               'RH',
               'OPERACIONAL',
               'PLANEJAMENTO_ESTRATEGICO',
@@ -209,14 +200,13 @@ export const appNavSections: NavSection[] = [
           {
             href: '/ponto/admin/termos-ciencia',
             label: 'Termos de Ciência',
-            roles: ['MASTER', 'ADMIN', 'JURIDICO', 'OPERACIONAL'],
+            roles: ['MASTER', 'JURIDICO', 'OPERACIONAL'],
           },
           {
             href: '/operacional/ponto/protocolo',
             label: 'Buscar Protocolo',
             roles: [
               'MASTER',
-              'ADMIN',
               'RH',
               'OPERACIONAL',
               'SUPERVISOR',
@@ -269,11 +259,6 @@ export const appNavSections: NavSection[] = [
           'PLANEJAMENTO_ESTRATEGICO',
         ],
       },
-      {
-        href: '/rh/processos',
-        label: 'Processos Jurídicos',
-        roles: ['MASTER', 'ADMIN', 'RH', 'JURIDICO'],
-      },
     ],
   },
   {
@@ -282,19 +267,18 @@ export const appNavSections: NavSection[] = [
       {
         href: '/administracao/mensagens',
         label: 'Mensagens WhatsApp',
-        roles: ['MASTER', 'ADMIN', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'],
+        roles: ['MASTER', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'],
       },
       {
         href: '/administracao/emails',
         label: 'Emails Enviados',
-        roles: ['MASTER', 'ADMIN', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'],
+        roles: ['MASTER', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'],
       },
       {
         href: '/auditoria',
         label: 'Auditoria',
         roles: [
           'MASTER',
-          'ADMIN',
           'RH',
           'JURIDICO',
           'OPERACIONAL',
@@ -304,7 +288,7 @@ export const appNavSections: NavSection[] = [
       {
         href: '/config/solicitacoes',
         label: 'Solicitações',
-        roles: ['MASTER', 'ADMIN', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'],
+        roles: ['MASTER', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'],
         children: [
           {
             href: '/config/solicitacoes/colaboradores',
@@ -326,32 +310,32 @@ export const appNavSections: NavSection[] = [
       {
         href: '/config/organograma',
         label: 'Organograma',
-        roles: ['MASTER', 'ADMIN', 'OPERACIONAL'],
+        roles: ['MASTER', 'OPERACIONAL'],
       },
       {
         href: '/config/grupos',
         label: 'Grupos',
-        roles: ['MASTER', 'ADMIN', 'RH', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'],
+        roles: ['MASTER', 'RH', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'],
       },
       {
         href: '/config/supervisores',
         label: 'Supervisores',
-        roles: ['MASTER', 'ADMIN', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'],
+        roles: ['MASTER', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'],
       },
       {
         href: '/config/unidades',
         label: 'Unidades',
-        roles: ['MASTER', 'ADMIN', 'RH', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'],
+        roles: ['MASTER', 'RH', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'],
       },
       {
         href: '/config/usuarios',
         label: 'Usuários',
-        roles: ['MASTER', 'ADMIN', 'PLANEJAMENTO_ESTRATEGICO'],
+        roles: ['MASTER', 'PLANEJAMENTO_ESTRATEGICO'],
       },
       {
         href: '/config/branding',
         label: 'Branding',
-        roles: ['MASTER', 'ADMIN', 'PLANEJAMENTO_ESTRATEGICO'],
+        roles: ['MASTER', 'PLANEJAMENTO_ESTRATEGICO'],
       },
     ],
   },

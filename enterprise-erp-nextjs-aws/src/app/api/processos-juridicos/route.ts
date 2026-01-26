@@ -23,6 +23,12 @@ const processoSchema = z.object({
   observacoes: z.string().optional().nullable(),
   status: z.enum(['EM_ANDAMENTO', 'ARQUIVADO', 'AGUARDANDO_PAGAMENTO', 'PAGO', 'CANCELADO']).optional(),
   parcelas: z.array(parcelaSchema).optional().default([]),
+  // Novos campos de pagamento
+  custasProcessuais: z.coerce.number().optional().nullable(),
+  contribuicoesPrevidenciarias: z.coerce.number().optional().nullable(),
+  honorariosPericiais: z.coerce.number().optional().nullable(),
+  dadosPagamento: z.string().optional().nullable(),
+  contasBancarias: z.string().optional().nullable(),
 });
 
 export async function GET(req: NextRequest) {
@@ -80,7 +86,7 @@ export async function GET(req: NextRequest) {
             { mesVencimento: 'asc' },
             { diaVencimento: 'asc' },
           ],
-        },
+        } as any,
       },
       orderBy: {
         createdAt: 'desc',
@@ -91,9 +97,19 @@ export async function GET(req: NextRequest) {
     const processosSerializados = processos.map((p) => ({
       ...p,
       valorCausa: p.valorCausa ? Number(p.valorCausa) : null,
+      custasProcessuais: (p as any).custasProcessuais ? Number((p as any).custasProcessuais) : null,
+      contribuicoesPrevidenciarias: (p as any).contribuicoesPrevidenciarias ? Number((p as any).contribuicoesPrevidenciarias) : null,
+      honorariosPericiais: (p as any).honorariosPericiais ? Number((p as any).honorariosPericiais) : null,
+      dadosPagamento: (p as any).dadosPagamento || null,
+      contasBancarias: (p as any).contasBancarias || null,
       parcelas: p.parcelas.map((parcela) => ({
         ...parcela,
         valor: Number(parcela.valor),
+        comprovantePagamentoUrl: (parcela as any).comprovantePagamentoUrl || null,
+        marcadoComoPagoPor: (parcela as any).marcadoComoPagoPor || null,
+        marcadoComoPagoEm: (parcela as any).marcadoComoPagoEm || null,
+        naoPago: (parcela as any).naoPago || false,
+        marcadoPor: (parcela as any).marcadoPor || null,
       })),
     }));
 
@@ -126,6 +142,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
     }
 
+    // Apenas MASTER e JURIDICO podem criar processos (editar valores)
+    if (!['MASTER', 'JURIDICO'].includes(user.role)) {
+      return NextResponse.json(
+        { error: 'Apenas usuários Jurídico podem criar processos' },
+        { status: 403 }
+      );
+    }
+
     const body = await req.json();
     const validatedData = processoSchema.parse(body);
 
@@ -139,6 +163,11 @@ export async function POST(req: NextRequest) {
         valorCausa: validatedData.valorCausa ? new Decimal(validatedData.valorCausa) : null,
         observacoes: validatedData.observacoes,
         status: validatedData.status || 'EM_ANDAMENTO',
+        custasProcessuais: validatedData.custasProcessuais ? new Decimal(validatedData.custasProcessuais) : null,
+        contribuicoesPrevidenciarias: validatedData.contribuicoesPrevidenciarias ? new Decimal(validatedData.contribuicoesPrevidenciarias) : null,
+        honorariosPericiais: validatedData.honorariosPericiais ? new Decimal(validatedData.honorariosPericiais) : null,
+        dadosPagamento: validatedData.dadosPagamento,
+        contasBancarias: validatedData.contasBancarias,
         criadoPorId: session.user.id,
         parcelas: {
           create: validatedData.parcelas?.map((parcela) => ({
@@ -149,7 +178,7 @@ export async function POST(req: NextRequest) {
             observacoes: parcela.observacoes,
           })) || [],
         },
-      },
+      } as any,
       include: {
         criadoPor: {
           select: {
@@ -164,7 +193,7 @@ export async function POST(req: NextRequest) {
             { mesVencimento: 'asc' },
             { diaVencimento: 'asc' },
           ],
-        },
+        } as any,
       },
     });
 
@@ -172,9 +201,19 @@ export async function POST(req: NextRequest) {
     const processoSerializado = {
       ...processo,
       valorCausa: processo.valorCausa ? Number(processo.valorCausa) : null,
+      custasProcessuais: (processo as any).custasProcessuais ? Number((processo as any).custasProcessuais) : null,
+      contribuicoesPrevidenciarias: (processo as any).contribuicoesPrevidenciarias ? Number((processo as any).contribuicoesPrevidenciarias) : null,
+      honorariosPericiais: (processo as any).honorariosPericiais ? Number((processo as any).honorariosPericiais) : null,
+      dadosPagamento: (processo as any).dadosPagamento || null,
+      contasBancarias: (processo as any).contasBancarias || null,
       parcelas: processo.parcelas.map((parcela) => ({
         ...parcela,
         valor: Number(parcela.valor),
+        comprovantePagamentoUrl: (parcela as any).comprovantePagamentoUrl || null,
+        marcadoComoPagoPor: (parcela as any).marcadoComoPagoPor || null,
+        marcadoComoPagoEm: (parcela as any).marcadoComoPagoEm || null,
+        naoPago: (parcela as any).naoPago || false,
+        marcadoPor: (parcela as any).marcadoPor || null,
       })),
     };
 

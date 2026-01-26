@@ -15,6 +15,9 @@ import {
   Trash2,
   Eye,
   Loader2,
+  CheckCircle,
+  XCircle,
+  Upload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -70,6 +73,15 @@ interface ParcelaProcesso {
   notificadoEm: string | null;
   pagoEm: string | null;
   observacoes: string | null;
+  comprovantePagamentoUrl?: string | null;
+  marcadoComoPagoPor?: string | null;
+  marcadoComoPagoEm?: string | null;
+  naoPago?: boolean;
+  marcadoPor?: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
 }
 
 interface ProcessoJuridico {
@@ -90,6 +102,11 @@ interface ProcessoJuridico {
     name: string;
     email: string;
   };
+  custasProcessuais?: number | null;
+  contribuicoesPrevidenciarias?: number | null;
+  honorariosPericiais?: number | null;
+  dadosPagamento?: string | null;
+  contasBancarias?: string | null;
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -114,7 +131,8 @@ export default function ProcessosJuridicosPage() {
     | 'OPERACIONAL'
     | undefined;
   const canView = hasRouteAccess(role, ['MASTER', 'ADMIN', 'RH', 'JURIDICO']);
-  const canManage = hasRouteAccess(role, ['MASTER', 'ADMIN', 'RH', 'JURIDICO']);
+  const canManage = hasRouteAccess(role, ['MASTER', 'JURIDICO']); // Apenas MASTER e JURIDICO podem editar valores
+  const canMarcarPagamento = hasRouteAccess(role, ['MASTER', 'ADMIN', 'RH', 'JURIDICO']); // Todos podem marcar pagamento
 
   const [processos, setProcessos] = useState<ProcessoJuridico[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,6 +144,13 @@ export default function ProcessosJuridicosPage() {
   const [deletingProcesso, setDeletingProcesso] =
     useState<ProcessoJuridico | null>(null);
   const [formLoading, setFormLoading] = useState(false);
+  const [parcelaPagamentoDialog, setParcelaPagamentoDialog] = useState<{
+    open: boolean;
+    parcela: ParcelaProcesso | null;
+    processoId: string | null;
+  }>({ open: false, parcela: null, processoId: null });
+  const [uploadingComprovante, setUploadingComprovante] = useState(false);
+  const [marcandoPago, setMarcandoPago] = useState(false);
 
   const [formData, setFormData] = useState({
     numeroProcesso: '',
@@ -140,6 +165,12 @@ export default function ProcessosJuridicosPage() {
     valorTotalParcelas: '',
     dataInicialParcela: '', // formato: YYYY-MM-DD
     dataFinalParcela: '', // formato: YYYY-MM-DD
+    // Novos campos de pagamento
+    custasProcessuais: '',
+    contribuicoesPrevidenciarias: '',
+    honorariosPericiais: '',
+    dadosPagamento: '',
+    contasBancarias: '',
   });
 
   // Estado para gerenciar parcelas editáveis
@@ -370,6 +401,11 @@ export default function ProcessosJuridicosPage() {
         valorTotalParcelas: valorTotal.toString(),
         dataInicialParcela: dataInicial,
         dataFinalParcela: dataFinal,
+        custasProcessuais: (processo as any).custasProcessuais?.toString() || '',
+        contribuicoesPrevidenciarias: (processo as any).contribuicoesPrevidenciarias?.toString() || '',
+        honorariosPericiais: (processo as any).honorariosPericiais?.toString() || '',
+        dadosPagamento: (processo as any).dadosPagamento || '',
+        contasBancarias: (processo as any).contasBancarias || '',
       });
     } else {
       setEditingProcesso(null);
@@ -386,6 +422,11 @@ export default function ProcessosJuridicosPage() {
         valorTotalParcelas: '',
         dataInicialParcela: '',
         dataFinalParcela: '',
+        custasProcessuais: '',
+        contribuicoesPrevidenciarias: '',
+        honorariosPericiais: '',
+        dadosPagamento: '',
+        contasBancarias: '',
       });
     }
     setIsDialogOpen(true);
@@ -408,6 +449,11 @@ export default function ProcessosJuridicosPage() {
       valorTotalParcelas: '',
       dataInicialParcela: '',
       dataFinalParcela: '',
+      custasProcessuais: '',
+      contribuicoesPrevidenciarias: '',
+      honorariosPericiais: '',
+      dadosPagamento: '',
+      contasBancarias: '',
     });
   };
 
@@ -459,6 +505,17 @@ export default function ProcessosJuridicosPage() {
           : null,
         observacoes: formData.observacoes || null,
         status: formData.status,
+        custasProcessuais: formData.custasProcessuais
+          ? parseFloat(formData.custasProcessuais)
+          : null,
+        contribuicoesPrevidenciarias: formData.contribuicoesPrevidenciarias
+          ? parseFloat(formData.contribuicoesPrevidenciarias)
+          : null,
+        honorariosPericiais: formData.honorariosPericiais
+          ? parseFloat(formData.honorariosPericiais)
+          : null,
+        dadosPagamento: formData.dadosPagamento || null,
+        contasBancarias: formData.contasBancarias || null,
         parcelas: parcelas.map(p => ({
           valor: p.valor,
           diaVencimento: p.diaVencimento,
@@ -565,6 +622,78 @@ export default function ProcessosJuridicosPage() {
     });
   });
 
+  const handleOpenParcelaPagamento = (parcela: ParcelaProcesso, processoId: string) => {
+    setParcelaPagamentoDialog({ open: true, parcela, processoId });
+  };
+
+  const handleCloseParcelaPagamento = () => {
+    setParcelaPagamentoDialog({ open: false, parcela: null, processoId: null });
+  };
+
+  const handleUploadComprovante = async (file: File) => {
+    if (!parcelaPagamentoDialog.parcela) return;
+
+    try {
+      setUploadingComprovante(true);
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(
+        `/api/processos-juridicos/parcelas/${parcelaPagamentoDialog.parcela.id}/comprovante`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      const result = await response.json();
+
+      if (response.ok) {
+        toast.success('Comprovante enviado com sucesso!');
+        fetchProcessos();
+        handleCloseParcelaPagamento();
+      } else {
+        toast.error(result.error || 'Erro ao enviar comprovante');
+      }
+    } catch (error) {
+      console.error('Erro ao fazer upload do comprovante:', error);
+      toast.error('Erro ao fazer upload do comprovante');
+    } finally {
+      setUploadingComprovante(false);
+    }
+  };
+
+  const handleMarcarPago = async (pago: boolean, observacoes?: string) => {
+    if (!parcelaPagamentoDialog.parcela) return;
+
+    try {
+      setMarcandoPago(true);
+      const response = await fetch(
+        `/api/processos-juridicos/parcelas/${parcelaPagamentoDialog.parcela.id}/pagar`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pago, observacoes: observacoes || null }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (response.ok) {
+        toast.success(pago ? 'Parcela marcada como paga!' : 'Parcela marcada como não paga!');
+        fetchProcessos();
+        handleCloseParcelaPagamento();
+      } else {
+        toast.error(result.error || 'Erro ao atualizar status da parcela');
+      }
+    } catch (error) {
+      console.error('Erro ao marcar parcela:', error);
+      toast.error('Erro ao marcar parcela');
+    } finally {
+      setMarcandoPago(false);
+    }
+  };
+
   if (status === 'loading') {
     return (
       <div className="flex items-center justify-center h-64">
@@ -632,6 +761,7 @@ export default function ProcessosJuridicosPage() {
                     }
                     placeholder="1234567-89.2024.8.26.0100"
                     required
+                    disabled={!canManage}
                   />
                 </div>
                 <div>
@@ -643,6 +773,7 @@ export default function ProcessosJuridicosPage() {
                       setFormData({ ...formData, tipoProcesso: e.target.value })
                     }
                     placeholder="Ex: Trabalhista, Cível, Tributário"
+                    disabled={!canManage}
                   />
                 </div>
               </div>
@@ -657,6 +788,7 @@ export default function ProcessosJuridicosPage() {
                       setFormData({ ...formData, reclamante: e.target.value })
                     }
                     placeholder="Nome do reclamante"
+                    disabled={!canManage}
                   />
                 </div>
                 <div>
@@ -668,6 +800,7 @@ export default function ProcessosJuridicosPage() {
                       setFormData({ ...formData, advogado: e.target.value })
                     }
                     placeholder="Nome do advogado"
+                    disabled={!canManage}
                   />
                 </div>
               </div>
@@ -681,6 +814,7 @@ export default function ProcessosJuridicosPage() {
                     setFormData({ ...formData, escritorio: e.target.value })
                   }
                   placeholder="Nome do escritório"
+                  disabled={!canManage}
                 />
               </div>
 
@@ -698,7 +832,132 @@ export default function ProcessosJuridicosPage() {
                     })
                   }
                   placeholder="0.00"
+                  disabled={!canManage}
                 />
+                {!canManage && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Apenas Jurídico pode editar valores
+                  </p>
+                )}
+              </div>
+
+              {/* Seção de Custas e Pagamentos */}
+              <div className="border-t pt-4">
+                <div className="mb-4">
+                  <Label className="text-base font-semibold">
+                    Custas e Pagamentos
+                  </Label>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label htmlFor="custasProcessuais">Custas Processuais</Label>
+                    <Input
+                      id="custasProcessuais"
+                      type="number"
+                      step="0.01"
+                      value={formData.custasProcessuais}
+                      onChange={e =>
+                        setFormData({
+                          ...formData,
+                          custasProcessuais: e.target.value,
+                        })
+                      }
+                      placeholder="0.00"
+                      disabled={!canManage}
+                    />
+                    {!canManage && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Apenas Jurídico pode editar valores
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <Label htmlFor="contribuicoesPrevidenciarias">
+                      Contribuições Previdenciárias
+                    </Label>
+                    <Input
+                      id="contribuicoesPrevidenciarias"
+                      type="number"
+                      step="0.01"
+                      value={formData.contribuicoesPrevidenciarias}
+                      onChange={e =>
+                        setFormData({
+                          ...formData,
+                          contribuicoesPrevidenciarias: e.target.value,
+                        })
+                      }
+                      placeholder="0.00"
+                      disabled={!canManage}
+                    />
+                    {!canManage && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Apenas Jurídico pode editar valores
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <Label htmlFor="honorariosPericiais">
+                      Honorários Periciais
+                    </Label>
+                    <Input
+                      id="honorariosPericiais"
+                      type="number"
+                      step="0.01"
+                      value={formData.honorariosPericiais}
+                      onChange={e =>
+                        setFormData({
+                          ...formData,
+                          honorariosPericiais: e.target.value,
+                        })
+                      }
+                      placeholder="0.00"
+                      disabled={!canManage}
+                    />
+                    {!canManage && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Apenas Jurídico pode editar valores
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <Label htmlFor="dadosPagamento">Dados de Pagamento</Label>
+                  <textarea
+                    id="dadosPagamento"
+                    value={formData.dadosPagamento}
+                    onChange={e =>
+                      setFormData({ ...formData, dadosPagamento: e.target.value })
+                    }
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 disabled:cursor-not-allowed"
+                    placeholder="Informações sobre pagamento, formas de pagamento, etc."
+                    disabled={!canManage}
+                  />
+                  {!canManage && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Apenas Jurídico pode editar valores
+                    </p>
+                  )}
+                </div>
+                <div className="mt-4">
+                  <Label htmlFor="contasBancarias">Contas Bancárias</Label>
+                  <textarea
+                    id="contasBancarias"
+                    value={formData.contasBancarias}
+                    onChange={e =>
+                      setFormData({ ...formData, contasBancarias: e.target.value })
+                    }
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 disabled:cursor-not-allowed"
+                    placeholder="Banco, Agência, Conta, Tipo de conta, etc."
+                    disabled={!canManage}
+                  />
+                  {!canManage && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Apenas Jurídico pode editar valores
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* Seção de Parcelas - Configuração Automática */}
@@ -734,6 +993,7 @@ export default function ProcessosJuridicosPage() {
                         }
                       }}
                       placeholder="0.00"
+                      disabled={!canManage}
                     />
                     <p className="text-xs text-gray-500 mt-1">
                       Valor total que será dividido entre as parcelas (você pode
@@ -764,6 +1024,7 @@ export default function ProcessosJuridicosPage() {
                           ? true
                           : false
                       }
+                      disabled={!canManage}
                     />
                     <p className="text-xs text-gray-500 mt-1">
                       Data da primeira parcela (dia/mês/ano)
@@ -794,6 +1055,7 @@ export default function ProcessosJuridicosPage() {
                           ? true
                           : false
                       }
+                      disabled={!canManage}
                     />
                     <p className="text-xs text-gray-500 mt-1">
                       Data da última parcela (dia/mês/ano)
@@ -802,7 +1064,7 @@ export default function ProcessosJuridicosPage() {
                 </div>
 
                 {/* Botão para regenerar parcelas */}
-                {parcelasEditaveis.length > 0 && (
+                {parcelasEditaveis.length > 0 && canManage && (
                   <div className="mt-2">
                     <Button
                       type="button"
@@ -916,8 +1178,9 @@ export default function ProcessosJuridicosPage() {
                                   parseFloat(e.target.value) || 0;
                                 atualizarValorParcela(index, novoValor);
                               }}
-                              className="w-56 h-10 text-base font-semibold text-right border-2 focus:border-blue-500"
+                              className="w-56 h-10 text-base font-semibold text-right border-2 focus:border-blue-500 disabled:bg-gray-50 disabled:cursor-not-allowed"
                               placeholder="0.00"
+                              disabled={!canManage}
                             />
                           </div>
                         </div>
@@ -974,8 +1237,9 @@ export default function ProcessosJuridicosPage() {
                     setFormData({ ...formData, observacoes: e.target.value })
                   }
                   rows={4}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 disabled:cursor-not-allowed"
                   placeholder="Observações gerais sobre o processo..."
+                  disabled={!canManage}
                 />
               </div>
 
@@ -1158,23 +1422,62 @@ export default function ProcessosJuridicosPage() {
                     <TableCell>{processo.tipoProcesso || '—'}</TableCell>
                     <TableCell>{formatCurrency(processo.valorCausa)}</TableCell>
                     <TableCell>
-                      <div className="space-y-1">
-                        <div className="text-sm font-medium">
-                          {formatCurrency(totalPendente)} pendente
+                      <div className="space-y-2">
+                        <div className="space-y-1">
+                          <div className="text-sm font-medium">
+                            {formatCurrency(totalPendente)} pendente
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {parcelasPendentes.length} parcela(s) pendente(s)
+                          </div>
+                          {parcelaProxima && (
+                            <div className="text-xs">
+                              <span className="text-red-600 font-medium">
+                                Próxima: {parcelaProxima.diaVencimento}/
+                                {parcelaProxima.mesVencimento}
+                                {parcelaProxima.anoVencimento &&
+                                  `/${parcelaProxima.anoVencimento}`}
+                                {' - '}
+                                {getParcelaVencimentoStatus(parcelaProxima).text}
+                              </span>
+                            </div>
+                          )}
                         </div>
-                        <div className="text-xs text-gray-500">
-                          {parcelasPendentes.length} parcela(s) pendente(s)
-                        </div>
-                        {parcelaProxima && (
-                          <div className="text-xs">
-                            <span className="text-red-600 font-medium">
-                              Próxima: {parcelaProxima.diaVencimento}/
-                              {parcelaProxima.mesVencimento}
-                              {parcelaProxima.anoVencimento &&
-                                `/${parcelaProxima.anoVencimento}`}
-                              {' - '}
-                              {getParcelaVencimentoStatus(parcelaProxima).text}
-                            </span>
+                        {canMarcarPagamento && processo.parcelas && processo.parcelas.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {processo.parcelas.slice(0, 3).map((parcela) => (
+                              <Button
+                                key={parcela.id}
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleOpenParcelaPagamento(parcela, processo.id)}
+                                className="text-xs h-7"
+                                title={`Gerenciar pagamento da parcela de ${formatCurrency(parcela.valor)}`}
+                              >
+                                {parcela.status === 'PAGA' ? (
+                                  <CheckCircle className="h-3 w-3 mr-1 text-green-600" />
+                                ) : (
+                                  <DollarSign className="h-3 w-3 mr-1" />
+                                )}
+                                {formatCurrency(parcela.valor)}
+                              </Button>
+                            ))}
+                            {processo.parcelas.length > 3 && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  // Abrir primeira parcela pendente ou primeira parcela
+                                  const primeiraParcela = processo.parcelas?.[0];
+                                  if (primeiraParcela) {
+                                    handleOpenParcelaPagamento(primeiraParcela, processo.id);
+                                  }
+                                }}
+                                className="text-xs h-7"
+                              >
+                                +{processo.parcelas.length - 3} mais
+                              </Button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1253,6 +1556,161 @@ export default function ProcessosJuridicosPage() {
           </Table>
         )}
       </div>
+
+      {/* Dialog para gerenciar pagamento de parcela */}
+      <Dialog
+        open={parcelaPagamentoDialog.open}
+        onOpenChange={(open) => {
+          if (!open) handleCloseParcelaPagamento();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Gerenciar Pagamento da Parcela</DialogTitle>
+            <DialogDescription>
+              {parcelaPagamentoDialog.parcela && (
+                <>
+                  Parcela de {formatCurrency(parcelaPagamentoDialog.parcela.valor)} - Vencimento:{' '}
+                  {String(parcelaPagamentoDialog.parcela.diaVencimento).padStart(2, '0')}/
+                  {String(parcelaPagamentoDialog.parcela.mesVencimento).padStart(2, '0')}/
+                  {parcelaPagamentoDialog.parcela.anoVencimento}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          {parcelaPagamentoDialog.parcela && (
+            <div className="space-y-4">
+              <div>
+                <Label>Status Atual</Label>
+                <Badge
+                  className={
+                    parcelaPagamentoDialog.parcela.status === 'PAGA'
+                      ? 'bg-green-100 text-green-800'
+                      : parcelaPagamentoDialog.parcela.status === 'VENCIDA'
+                      ? 'bg-red-100 text-red-800'
+                      : 'bg-yellow-100 text-yellow-800'
+                  }
+                >
+                  {parcelaPagamentoDialog.parcela.status === 'PAGA'
+                    ? 'Paga'
+                    : parcelaPagamentoDialog.parcela.status === 'VENCIDA'
+                    ? 'Vencida'
+                    : 'Pendente'}
+                </Badge>
+              </div>
+
+              {parcelaPagamentoDialog.parcela.comprovantePagamentoUrl && (
+                <div>
+                  <Label>Comprovante de Pagamento</Label>
+                  <div className="mt-2">
+                    <a
+                      href={parcelaPagamentoDialog.parcela.comprovantePagamentoUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline flex items-center gap-2"
+                    >
+                      <Eye className="h-4 w-4" />
+                      Ver comprovante
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {parcelaPagamentoDialog.parcela.marcadoPor && (
+                <div>
+                  <Label>Marcado como pago por</Label>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {parcelaPagamentoDialog.parcela.marcadoPor.name} (
+                    {parcelaPagamentoDialog.parcela.marcadoPor.email})
+                  </p>
+                  {parcelaPagamentoDialog.parcela.marcadoComoPagoEm && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Em:{' '}
+                      {format(
+                        parseISO(parcelaPagamentoDialog.parcela.marcadoComoPagoEm),
+                        "dd/MM/yyyy 'às' HH:mm",
+                        { locale: ptBR }
+                      )}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <Label htmlFor="comprovanteFile">Enviar Comprovante de Pagamento</Label>
+                <Input
+                  id="comprovanteFile"
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      handleUploadComprovante(file);
+                    }
+                  }}
+                  disabled={uploadingComprovante}
+                  className="mt-2"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Formatos aceitos: JPG, PNG, WEBP, PDF (máx. 10MB)
+                </p>
+              </div>
+
+              <div className="flex gap-2 pt-4 border-t">
+                {parcelaPagamentoDialog.parcela.status !== 'PAGA' ? (
+                  <Button
+                    onClick={() => handleMarcarPago(true)}
+                    disabled={marcandoPago || uploadingComprovante}
+                    className="flex-1"
+                  >
+                    {marcandoPago ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Marcando...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="mr-2 h-4 w-4" />
+                        Marcar como Pago
+                      </>
+                    )}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => handleMarcarPago(false)}
+                    disabled={marcandoPago || uploadingComprovante}
+                    variant="outline"
+                    className="flex-1"
+                  >
+                    {marcandoPago ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Atualizando...
+                      </>
+                    ) : (
+                      <>
+                        <XCircle className="mr-2 h-4 w-4" />
+                        Marcar como Não Pago
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCloseParcelaPagamento}
+              disabled={marcandoPago || uploadingComprovante}
+            >
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
