@@ -1,5 +1,3 @@
-# KL Facilities - Monorepo
-
 Repositório monorepo contendo todos os projetos da KL Facilities.
 
 ## Estrutura
@@ -14,7 +12,9 @@ klfacilities/
 ## Projetos
 
 ### enterprise-erp-nextjs-aws
+
 Sistema ERP principal desenvolvido em Next.js 15 com:
+
 - Autenticação (NextAuth)
 - Banco de dados (PostgreSQL + Prisma)
 - APIs REST
@@ -24,15 +24,18 @@ Sistema ERP principal desenvolvido em Next.js 15 com:
 - Analytics e relatórios
 
 **URLs de produção:**
+
 - https://financeiro.klfacilities.com.br
 - https://colaborador.klfacilities.com.br
 - https://ponto.klfacilities.com.br
 - https://checklist.klfacilities.com.br
 
 ### mobile-admin-panel-expo
+
 Aplicativo mobile React Native (Expo) para administradores.
 
 ### mobile-ponto-digital-expo
+
 Aplicativo mobile React Native (Expo) para registro de ponto digital.
 
 ## Deploy
@@ -50,6 +53,7 @@ As configurações estão no arquivo `enterprise-erp-nextjs-aws/vercel.json`.
 ## Desenvolvimento Local
 
 ### Pré-requisitos
+
 - Node.js 18.17+ (verificar `.nvmrc` em cada projeto)
 - npm ou pnpm
 - PostgreSQL (ou usar Neon DB)
@@ -80,6 +84,7 @@ npm run dev
 Ver `enterprise-erp-nextjs-aws/.env.example` para lista completa de variáveis necessárias.
 
 Principais:
+
 - `DATABASE_URL` - URL de conexão PostgreSQL
 - `NEXTAUTH_URL` - URL base da aplicação
 - `NEXTAUTH_SECRET` - Secret para NextAuth
@@ -89,6 +94,7 @@ Principais:
 ## Assets (Imagens)
 
 As imagens estão armazenadas no AWS S3:
+
 - Portfolio: `s3://kl-checklist/assets/portfolio/`
 - Logos: `s3://kl-checklist/assets/logo-kl-light.png`
 

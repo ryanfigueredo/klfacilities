@@ -12,7 +12,14 @@
       "android": {
         "buildType": "apk"
       },
-      "distribution": "internal"
+      "ios": {
+        "buildConfiguration": "Release",
+        "simulator": false
+      },
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://www.klfacilities.com.br"
+      }
     },
     "apk-production": {
       "autoIncrement": true,
@@ -23,7 +30,8 @@
       "env": {
         "EXPO_ANDROID_TARGET_SDK_VERSION": "35",
         "EXPO_ANDROID_COMPILE_SDK_VERSION": "35",
-        "EXPO_ANDROID_MIN_SDK_VERSION": "24"
+        "EXPO_ANDROID_MIN_SDK_VERSION": "24",
+        "EXPO_PUBLIC_API_URL": "https://www.klfacilities.com.br"
       }
     },
     "production": {
@@ -37,7 +45,8 @@
       "env": {
         "EXPO_ANDROID_TARGET_SDK_VERSION": "35",
         "EXPO_ANDROID_COMPILE_SDK_VERSION": "35",
-        "EXPO_ANDROID_MIN_SDK_VERSION": "24"
+        "EXPO_ANDROID_MIN_SDK_VERSION": "24",
+        "EXPO_PUBLIC_API_URL": "https://www.klfacilities.com.br"
       }
     }
   },

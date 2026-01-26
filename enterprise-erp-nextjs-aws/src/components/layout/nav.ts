@@ -326,22 +326,22 @@ export const appNavSections: NavSection[] = [
       {
         href: '/config/organograma',
         label: 'Organograma',
-        roles: ['MASTER'],
+        roles: ['MASTER', 'ADMIN', 'OPERACIONAL'],
       },
       {
         href: '/config/grupos',
         label: 'Grupos',
-        roles: ['MASTER', 'ADMIN', 'RH', 'PLANEJAMENTO_ESTRATEGICO'],
+        roles: ['MASTER', 'ADMIN', 'RH', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'],
       },
       {
         href: '/config/supervisores',
         label: 'Supervisores',
-        roles: ['MASTER', 'ADMIN', 'PLANEJAMENTO_ESTRATEGICO'],
+        roles: ['MASTER', 'ADMIN', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'],
       },
       {
         href: '/config/unidades',
         label: 'Unidades',
-        roles: ['MASTER', 'ADMIN', 'RH', 'PLANEJAMENTO_ESTRATEGICO'],
+        roles: ['MASTER', 'ADMIN', 'RH', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'],
       },
       {
         href: '/config/usuarios',

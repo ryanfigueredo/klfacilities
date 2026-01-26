@@ -162,7 +162,8 @@ export default function DashboardScreen({
               {(user.role === "SUPERVISOR" ||
                 user.role === "MASTER" ||
                 user.role === "ADMIN" ||
-                user.role === "RH") && (
+                user.role === "RH" ||
+                user.role === "OPERACIONAL") && (
                 <TouchableOpacity
                   style={[styles.card, { marginBottom: 16 }]}
                   onPress={() => navigation.navigate("Pontos" as never)}
@@ -177,10 +178,11 @@ export default function DashboardScreen({
                 </TouchableOpacity>
               )}
 
-              {/* Card de Funcionários */}
+              {/* Card de Funcionários (Colaboradores) */}
               {(user.role === "MASTER" ||
                 user.role === "ADMIN" ||
-                user.role === "RH") && (
+                user.role === "RH" ||
+                user.role === "OPERACIONAL") && (
                 <TouchableOpacity style={[styles.card, { marginBottom: 16 }]}>
                   <View style={styles.cardIconContainer}>
                     <Ionicons name="people" size={32} color="#666" />
@@ -195,7 +197,8 @@ export default function DashboardScreen({
               {/* Card de Incidentes */}
               {(user.role === "MASTER" ||
                 user.role === "ADMIN" ||
-                user.role === "SUPERVISOR") && (
+                user.role === "SUPERVISOR" ||
+                user.role === "OPERACIONAL") && (
                 <TouchableOpacity
                   style={[styles.card, { marginBottom: 16 }]}
                   onPress={() => navigation.navigate("Incidentes" as never)}
@@ -213,7 +216,8 @@ export default function DashboardScreen({
               {/* Card de Avaliações */}
               {(user.role === "MASTER" ||
                 user.role === "ADMIN" ||
-                user.role === "SUPERVISOR") && (
+                user.role === "SUPERVISOR" ||
+                user.role === "OPERACIONAL") && (
                 <TouchableOpacity
                   style={[styles.card, { marginBottom: 16 }]}
                   onPress={() => navigation.navigate("Avaliacoes" as never)}
@@ -232,7 +236,8 @@ export default function DashboardScreen({
               {(user.role === "MASTER" ||
                 user.role === "ADMIN" ||
                 user.role === "SUPERVISOR" ||
-                user.role === "RH") && (
+                user.role === "RH" ||
+                user.role === "OPERACIONAL") && (
                 <TouchableOpacity
                   style={[styles.card, { marginBottom: 16 }]}
                   onPress={() => navigation.navigate("BancoTalentos" as never)}

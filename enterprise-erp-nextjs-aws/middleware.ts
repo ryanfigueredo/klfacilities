@@ -295,6 +295,10 @@ export async function middleware(req: NextRequest) {
     '/config/usuarios': ['MASTER', 'ADMIN'], // MASTER e ADMIN podem acessar usuários
     '/config/responsaveis': ['MASTER', 'ADMIN', 'OPERACIONAL'], // MASTER, ADMIN e OPERACIONAL podem acessar responsáveis
     '/config/categorias': ['MASTER', 'ADMIN', 'SUPERVISOR', 'OPERACIONAL'], // OPERACIONAL pode acessar categorias
+    '/config/organograma': ['MASTER', 'ADMIN', 'OPERACIONAL'], // Organograma: Master, Admin e Operacional
+    '/config/grupos': ['MASTER', 'ADMIN', 'RH', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'],
+    '/config/supervisores': ['MASTER', 'ADMIN', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'],
+    '/config/unidades': ['MASTER', 'ADMIN', 'RH', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'],
   };
 
   for (const [path, roles] of Object.entries(protectedByRole)) {

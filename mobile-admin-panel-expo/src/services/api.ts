@@ -1,4 +1,5 @@
 import axios from "axios";
+import { Platform } from "react-native";
 import { API_ENDPOINTS, API_URL } from "../config/api";
 import * as SecureStore from "expo-secure-store";
 
@@ -373,6 +374,64 @@ export async function obterChecklistsRespondidos(): Promise<{
   return response.data;
 }
 
+export type ChecklistRespostaItem = {
+  id: string;
+  perguntaId: string;
+  valorTexto: string | null;
+  valorBoolean: boolean | null;
+  valorNumero: number | null;
+  valorOpcao: string | null;
+  fotoUrl: string | null;
+  observacao: string | null;
+  nota: number | null;
+  pergunta: { id: string; titulo: string; tipo: string };
+};
+
+export interface ChecklistRespondidoDetalhes {
+  resposta: {
+    id: string;
+    status: string;
+    observacoes: string | null;
+    protocolo: string | null;
+    assinaturaFotoUrl: string | null;
+    submittedAt: string | null;
+    template: { id: string; titulo: string; descricao: string | null };
+    unidade: { id: string; nome: string };
+    grupo: { id: string; nome: string } | null;
+    supervisor: { id: string; name: string; email: string };
+  };
+  template: {
+    id: string;
+    titulo: string;
+    grupos: Array<{
+      id: string;
+      titulo: string;
+      descricao: string | null;
+      ordem: number;
+      perguntas: Array<{
+        id: string;
+        titulo: string;
+        descricao: string | null;
+        tipo: string;
+        ordem: number;
+      }>;
+    }>;
+  };
+  respostas: ChecklistRespostaItem[];
+}
+
+/**
+ * Buscar detalhes de um checklist respondido (para visualização)
+ */
+export async function obterChecklistRespondidoDetalhes(
+  respostaId: string
+): Promise<ChecklistRespondidoDetalhes> {
+  const response = await api.get<ChecklistRespondidoDetalhes>(
+    `${API_ENDPOINTS.CHECKLISTS_RESPOSTA_DETALHE}/${respostaId}`
+  );
+  return response.data;
+}
+
 /**
  * Buscar opções para criar novo checklist (grupos, unidades, templates)
  */
@@ -537,10 +596,23 @@ export async function initializeAuth() {
     const token = await SecureStore.getItemAsync("authToken");
     if (token) {
       setAuthToken(token);
+      if (__DEV__) {
+        console.log("✅ Token carregado do SecureStore");
+      }
       return token;
     }
-  } catch (error) {
-    console.error("Erro ao carregar token:", error);
+  } catch (error: any) {
+    // No iOS, Keychain pode falhar no primeiro acesso ou se não tiver permissões
+    // Não quebrar o app, apenas retornar null e deixar usuário fazer login
+    if (__DEV__) {
+      console.error("Erro ao carregar token:", error);
+      console.error("Platform:", Platform.OS);
+    }
+    
+    // Em iOS, ignorar erro do Keychain e continuar (usuário fará login)
+    // Em Android, também ignorar para não quebrar o app
+    // O erro mais comum é Keychain não disponível no primeiro launch
+    return null;
   }
   return null;
 }
@@ -550,7 +622,19 @@ export async function initializeAuth() {
  */
 export async function obterUsuarioAtual(): Promise<User | null> {
   try {
-    const token = await SecureStore.getItemAsync("authToken");
+    // No iOS, SecureStore pode falhar silenciosamente
+    // Adicionar tratamento específico
+    let token: string | null = null;
+    try {
+      token = await SecureStore.getItemAsync("authToken");
+    } catch (secureStoreError: any) {
+      // No iOS, Keychain pode não estar disponível
+      if (__DEV__) {
+        console.warn("SecureStore não disponível:", secureStoreError);
+      }
+      return null;
+    }
+    
     if (!token) {
       return null;
     }
@@ -564,10 +648,18 @@ export async function obterUsuarioAtual(): Promise<User | null> {
       email: response.data.email,
       role: response.data.role as UserRole,
     };
-  } catch (error) {
-    console.error("Erro ao obter usuário atual:", error);
-    // Se o token for inválido, remover
-    await SecureStore.deleteItemAsync("authToken");
+  } catch (error: any) {
+    // Log apenas em desenvolvimento
+    if (__DEV__) {
+      console.error("Erro ao obter usuário atual:", error);
+      console.error("Platform:", Platform.OS);
+    }
+    // Se o token for inválido, remover (silenciosamente)
+    try {
+      await SecureStore.deleteItemAsync("authToken");
+    } catch (deleteError) {
+      // Ignorar erro ao deletar (comum no iOS se Keychain não estiver disponível)
+    }
     setAuthToken(null);
     return null;
   }
@@ -703,4 +795,5 @@ export async function obterAvaliacoes(params?: {
 }
 
 // Inicializar token automaticamente quando o módulo é carregado
-initializeAuth().catch(console.error);
+// Removido: pode causar problemas em produção. Inicialização deve ser feita explicitamente no App.tsx
+// initializeAuth().catch(console.error);

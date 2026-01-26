@@ -430,9 +430,9 @@ export default function ChecklistsScreen() {
                     key={respondido.id}
                     style={styles.card}
                     onPress={() => {
-                      // Navegar para visualizar o checklist respondido
-                      // TODO: Criar tela de visualização de checklist respondido
-                      Alert.alert("Em breve", "Visualização de checklist respondido em desenvolvimento.");
+                      navigation.navigate("VisualizarChecklistRespondido" as never, {
+                        respostaId: respondido.id,
+                      } as never);
                     }}
                   >
                     <View style={styles.cardHeader}>
