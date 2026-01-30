@@ -132,19 +132,27 @@ export async function PATCH(
             throw new Error('Unidade não encontrada');
           }
 
-          if (unidade._count.movimentos > 0 || unidade._count.mapeamentos > 0) {
+          // Bloquear apenas se houver movimentos (mapeamentos são removidos automaticamente)
+          if (unidade._count.movimentos > 0) {
             // Reverter aprovação
             await prisma.solicitacaoExclusaoConfig.update({
               where: { id },
               data: {
                 status: 'REJEITADA',
-                observacoes: `Não foi possível excluir: unidade está sendo utilizada em ${unidade._count.movimentos} movimento(s) e ${unidade._count.mapeamentos} mapeamento(s)`,
+                observacoes: `Não foi possível excluir: unidade está sendo utilizada em ${unidade._count.movimentos} movimento(s)`,
               },
             });
             return NextResponse.json({
               error: 'Não foi possível excluir: unidade está sendo utilizada',
-              details: `A unidade está sendo utilizada em ${unidade._count.movimentos} movimento(s) e ${unidade._count.mapeamentos} mapeamento(s)`,
+              details: `A unidade está sendo utilizada em ${unidade._count.movimentos} movimento(s)`,
             }, { status: 400 });
+          }
+
+          // Remover mapeamentos (grupo-unidade-responsável) antes de excluir a unidade
+          if (unidade._count.mapeamentos > 0) {
+            await prisma.mapeamentoGrupoUnidadeResponsavel.deleteMany({
+              where: { unidadeId: solicitacao.resourceId },
+            });
           }
 
           await prisma.unidade.delete({

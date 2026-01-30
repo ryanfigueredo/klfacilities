@@ -195,15 +195,12 @@ export async function DELETE(
       );
     }
 
-    // Verificar se está sendo referenciada em mapeamentos
+    // Deletar mapeamentos (grupo-unidade-responsável) antes de excluir a unidade
+    // Isso permite excluir unidades que estão vinculadas a grupos
     if (existing._count.mapeamentos > 0) {
-      return NextResponse.json(
-        {
-          error: 'Não é possível excluir esta unidade',
-          details: `A unidade está sendo utilizada em ${existing._count.mapeamentos} mapeamento(s)`,
-        },
-        { status: 400 }
-      );
+      await prisma.mapeamentoGrupoUnidadeResponsavel.deleteMany({
+        where: { unidadeId: id },
+      });
     }
 
     await prisma.unidade.delete({
