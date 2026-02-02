@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import {
   View,
   Text,
@@ -12,6 +18,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  InteractionManager,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -19,7 +26,6 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import * as Device from "expo-device";
-import * as FileSystem from "expo-file-system";
 import SignatureCanvas from "react-native-signature-canvas";
 import {
   obterChecklistEscopo,
@@ -32,11 +38,18 @@ import {
   compressImageForUpload,
   compressDataUrlToDataUrl,
 } from "../utils/compressImage";
+import {
+  copyPhotoToPermanentStorage,
+  photoUriExists,
+} from "../utils/draftPhotos";
 import * as NetInfo from "@react-native-community/netinfo";
 import * as SecureStore from "expo-secure-store";
 import {
   saveDraftLocally,
   getLocalDraft,
+  getLocalDraftsForEscopo,
+  saveEscopoCache,
+  getEscopoCache,
   syncAllPendingDrafts,
   getSyncStatus,
   setupAutoSync,
@@ -133,6 +146,9 @@ export default function ResponderChecklistScreen() {
     pendingSyncs: 0,
     isSyncing: false,
   });
+
+  // Fluxo pergunta por pergunta (melhor performance no Android)
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
 
   const solicitarPermissoes = useCallback(async () => {
     await ImagePicker.requestCameraPermissionsAsync();
@@ -408,7 +424,27 @@ export default function ResponderChecklistScreen() {
     try {
       setLoading(true);
       initialLoadDoneRef.current = false;
-      const data = await obterChecklistEscopo(escopoId);
+
+      let data: ChecklistEscopoDetalhes | null = null;
+      let isOffline = false;
+
+      try {
+        data = await obterChecklistEscopo(escopoId);
+      } catch (apiError: any) {
+        const isNetworkError =
+          apiError?.code === "NETWORK_ERROR" ||
+          apiError?.message?.includes("Network") ||
+          apiError?.code === "ERR_NETWORK";
+        if (isNetworkError) {
+          const cached = await getEscopoCache(escopoId);
+          if (cached) {
+            data = cached;
+            isOffline = true;
+            console.log("📴 Offline: usando escopo em cache");
+          }
+        }
+        if (!data) throw apiError;
+      }
 
       // Normalizar valores boolean que podem vir como strings da API
       if (data.escopo?.template?.grupos) {
@@ -441,53 +477,23 @@ export default function ResponderChecklistScreen() {
 
       setEscopo(data);
 
-      // Buscar rascunho existente (passar o escopo completo como parâmetro)
-      // Não usar carregarRascunho diretamente para evitar loop de dependências
-      try {
-        // Usar api do axios que já tem o token configurado
-        const token = await SecureStore.getItemAsync("authToken");
-        const headers: Record<string, string> = {
-          Accept: "application/json",
-        };
-        if (token) {
-          headers["Authorization"] = `Bearer ${token}`;
-        }
-
-        const response = await fetch(
-          `${API_URL}${API_ENDPOINTS.CHECKLISTS_RESPONDER}?escopoId=${data.escopo.id}`,
-          {
-            method: "GET",
-            headers,
-          }
+      // Salvar escopo em cache para uso offline (só quando online)
+      if (!isOffline) {
+        saveEscopoCache(escopoId, data).catch((e) =>
+          console.warn("Erro ao salvar escopo em cache:", e)
         );
+      }
 
-        if (!response.ok) {
-          console.error("❌ Erro ao buscar rascunho:", {
-            status: response.status,
-            statusText: response.statusText,
-          });
-          // Se der 401, pode ser problema de autenticação
-          if (response.status === 401) {
-            console.error("❌ Token inválido ou expirado!");
-          }
-        }
-
-        const rascunhoData = await response.json();
-
-        if (rascunhoData.rascunho) {
-          const r = rascunhoData.rascunho;
-          setRascunhoId(r.id);
-
-          const local = await getLocalDraft(data.escopo.id, r.id);
-          const apiCount = r.respostas?.length ?? 0;
-          const useLocal =
-            local?.formData?.answers &&
-            Array.isArray(local.formData.answers) &&
-            local.formData.answers.length >= apiCount;
-
-          if (useLocal && local) {
-            const fd = local.formData;
-            if (fd.observacoes) setObservacoes(fd.observacoes);
+      // Buscar rascunho existente (API ou local quando offline)
+      try {
+        if (isOffline) {
+          // Modo offline: usar rascunho salvo localmente
+          const localDrafts = await getLocalDraftsForEscopo(data.escopo.id);
+          if (localDrafts.length > 0) {
+            const draft = localDrafts[0];
+            setRascunhoId(draft.respostaId);
+            const fd = draft.formData;
+            if (fd?.observacoes) setObservacoes(fd.observacoes);
             const todasPerguntas: { id: string; tipo: string }[] = [];
             if (data.escopo?.template?.grupos) {
               data.escopo.template.grupos.forEach((g: any) => {
@@ -495,70 +501,107 @@ export default function ResponderChecklistScreen() {
               });
             }
             const byId = new Map(todasPerguntas.map((p) => [p.id, p]));
-            (fd.answers || []).forEach((a: any) => {
+            (fd?.answers || []).forEach((a: any) => {
               const pergunta = byId.get(a.perguntaId);
               if (!pergunta) return;
               switch (pergunta.tipo) {
                 case "TEXTO":
-                  if (a.valorTexto) setTextAnswers((prev) => ({ ...prev, [pergunta.id]: a.valorTexto }));
+                  if (a.valorTexto)
+                    setTextAnswers((prev) => ({
+                      ...prev,
+                      [pergunta.id]: a.valorTexto,
+                    }));
                   break;
                 case "BOOLEANO":
                   if (a.valorBoolean !== undefined && a.valorBoolean !== null) {
                     setBooleanAnswers((prev) => ({
                       ...prev,
-                      [pergunta.id]: a.valorBoolean ? "CONFORME" : "NAO_CONFORME",
+                      [pergunta.id]: a.valorBoolean
+                        ? "CONFORME"
+                        : "NAO_CONFORME",
                     }));
                     if (!a.valorBoolean && a.valorTexto) {
                       try {
                         const partes = a.valorTexto.split("\n\n");
                         if (partes.length >= 2) {
                           const motivo = partes[0].replace("Motivo: ", "");
-                          const resolucao = partes[1].replace("O que foi feito para resolver: ", "");
-                          setNaoConformeDetails((prev) => ({ ...prev, [pergunta.id]: { motivo, resolucao } }));
+                          const resolucao = partes[1].replace(
+                            "O que foi feito para resolver: ",
+                            ""
+                          );
+                          setNaoConformeDetails((prev) => ({
+                            ...prev,
+                            [pergunta.id]: { motivo, resolucao },
+                          }));
                         }
                       } catch (_) {}
                     }
                   }
                   break;
                 case "NUMERICO":
-                  if (a.valorNumero != null) setNumericAnswers((prev) => ({ ...prev, [pergunta.id]: String(a.valorNumero) }));
+                  if (a.valorNumero != null)
+                    setNumericAnswers((prev) => ({
+                      ...prev,
+                      [pergunta.id]: String(a.valorNumero),
+                    }));
                   break;
                 case "SELECAO":
-                  if (a.valorOpcao) setSelectAnswers((prev) => ({ ...prev, [pergunta.id]: a.valorOpcao }));
+                  if (a.valorOpcao)
+                    setSelectAnswers((prev) => ({
+                      ...prev,
+                      [pergunta.id]: a.valorOpcao,
+                    }));
                   break;
                 case "FOTO":
                   if (a.fotoUrl) {
                     try {
-                      const uris = typeof a.fotoUrl === "string" && a.fotoUrl.startsWith("[")
-                        ? JSON.parse(a.fotoUrl) : [a.fotoUrl];
-                      setPhotoAnswers((prev) => ({ ...prev, [pergunta.id]: uris }));
+                      const uris =
+                        typeof a.fotoUrl === "string" &&
+                        a.fotoUrl.startsWith("[")
+                          ? JSON.parse(a.fotoUrl)
+                          : [a.fotoUrl];
+                      setPhotoAnswers((prev) => ({
+                        ...prev,
+                        [pergunta.id]: uris,
+                      }));
                     } catch (_) {
-                      setPhotoAnswers((prev) => ({ ...prev, [pergunta.id]: [a.fotoUrl] }));
+                      setPhotoAnswers((prev) => ({
+                        ...prev,
+                        [pergunta.id]: [a.fotoUrl],
+                      }));
                     }
                   }
                   break;
               }
-              if (a.nota != null) setNotaAnswers((prev) => ({ ...prev, [pergunta.id]: a.nota }));
+              if (a.nota != null)
+                setNotaAnswers((prev) => ({ ...prev, [pergunta.id]: a.nota }));
             });
-            if (fd.fotos && typeof fd.fotos === "object") {
+            if (fd?.fotos && typeof fd.fotos === "object") {
               const next: Record<string, string[]> = {};
               for (const [key, arr] of Object.entries(fd.fotos)) {
                 if (!Array.isArray(arr)) continue;
                 const uris = arr.map((x: any) => x?.uri).filter(Boolean);
-                if (!uris.length) continue;
+                const validUris = (
+                  await Promise.all(
+                    uris.map(async (u) =>
+                      (await photoUriExists(u)) ? u : null
+                    )
+                  )
+                ).filter(Boolean) as string[];
+                if (!validUris.length) continue;
                 if (key.startsWith("foto_anexada_")) {
                   const pid = key.replace("foto_anexada_", "");
-                  next[`${pid}_anexo`] = uris;
+                  next[`${pid}_anexo`] = validUris;
                 } else if (key.startsWith("foto_")) {
                   const pid = key.replace("foto_", "");
-                  next[pid] = uris;
+                  next[pid] = validUris;
                 }
               }
               if (Object.keys(next).length > 0) {
                 setPhotoAnswers((prev) => ({ ...prev, ...next }));
               }
             }
-            if (fd.lat != null && fd.lng != null) {
+            if (fd?.lat != null && fd?.lng != null) {
               setLocalizacao({
                 coords: {
                   latitude: fd.lat,
@@ -573,178 +616,384 @@ export default function ResponderChecklistScreen() {
               } as Location.LocationObject);
             }
           } else {
-            if (r.observacoes) {
-              setObservacoes(r.observacoes);
-            }
-
-            // Carregar respostas do rascunho (API)
-            if (r.respostas && r.respostas.length > 0) {
-              r.respostas.forEach((resposta: any) => {
-              const todasPerguntas: any[] = [];
-              if (
-                data.escopo?.template?.grupos &&
-                Array.isArray(data.escopo.template.grupos)
-              ) {
-                data.escopo.template.grupos.forEach((g: any) => {
-                  if (g.perguntas && Array.isArray(g.perguntas)) {
-                    todasPerguntas.push(...g.perguntas);
-                  }
-                });
-              }
-              const pergunta = todasPerguntas.find(
-                (p) => p.id === resposta.perguntaId
-              );
-
-              if (!pergunta) {
-                return;
-              }
-
-              switch (pergunta.tipo) {
-                case "TEXTO":
-                  if (resposta.valorTexto) {
-                    setTextAnswers((prev) => ({
-                      ...prev,
-                      [pergunta.id]: resposta.valorTexto,
-                    }));
-                  }
-                  break;
-                case "BOOLEANO":
-                  if (
-                    resposta.valorBoolean !== null &&
-                    resposta.valorBoolean !== undefined
-                  ) {
-                    const valor = resposta.valorBoolean
-                      ? "CONFORME"
-                      : "NAO_CONFORME";
-                    setBooleanAnswers((prev) => ({
-                      ...prev,
-                      [pergunta.id]: valor,
-                    }));
-                  }
-                  if (resposta.observacao) {
-                    try {
-                      const partes = resposta.observacao.split("\n\n");
-                      if (partes.length >= 2) {
-                        const motivo = partes[0].replace("Motivo: ", "");
-                        const resolucao = partes[1].replace(
-                          "O que foi feito para resolver: ",
-                          ""
-                        );
-                        setNaoConformeDetails((prev) => ({
-                          ...prev,
-                          [pergunta.id]: { motivo, resolucao },
-                        }));
-                      }
-                    } catch (e) {
-                      console.error("Erro ao parsear observação:", e);
-                    }
-                  }
-                  if (resposta.fotoUrl) {
-                    try {
-                      const fotos =
-                        typeof resposta.fotoUrl === "string"
-                          ? resposta.fotoUrl.startsWith("[")
-                            ? JSON.parse(resposta.fotoUrl)
-                            : [resposta.fotoUrl]
-                          : [];
-                      setPhotoAnswers((prev) => ({
-                        ...prev,
-                        [`${pergunta.id}_anexo`]: fotos,
-                      }));
-                    } catch {
-                      setPhotoAnswers((prev) => ({
-                        ...prev,
-                        [`${pergunta.id}_anexo`]: [resposta.fotoUrl],
-                      }));
-                    }
-                  }
-                  break;
-                case "NUMERICO":
-                  if (
-                    resposta.valorNumero !== null &&
-                    resposta.valorNumero !== undefined
-                  ) {
-                    setNumericAnswers((prev) => ({
-                      ...prev,
-                      [pergunta.id]: resposta.valorNumero.toString(),
-                    }));
-                  }
-                  break;
-                case "SELECAO":
-                  if (resposta.valorOpcao) {
-                    setSelectAnswers((prev) => ({
-                      ...prev,
-                      [pergunta.id]: resposta.valorOpcao,
-                    }));
-                  }
-                  break;
-                case "FOTO":
-                  if (resposta.fotoUrl) {
-                    try {
-                      const fotos =
-                        typeof resposta.fotoUrl === "string"
-                          ? resposta.fotoUrl.startsWith("[")
-                            ? JSON.parse(resposta.fotoUrl)
-                            : [resposta.fotoUrl]
-                          : [];
-                      setPhotoAnswers((prev) => ({
-                        ...prev,
-                        [pergunta.id]: fotos,
-                      }));
-                    } catch {
-                      setPhotoAnswers((prev) => ({
-                        ...prev,
-                        [pergunta.id]: [resposta.fotoUrl],
-                      }));
-                    }
-                  }
-                  break;
-              }
-
-              if (resposta.nota !== null && resposta.nota !== undefined) {
-                setNotaAnswers((prev) => ({
-                  ...prev,
-                  [pergunta.id]: resposta.nota,
-                }));
-              }
-            });
-            }
-
-            // Obter localização (só ao restaurar da API)
-            if (r.lat && r.lng) {
-              setLocalizacao({
-                coords: {
-                  latitude: r.lat,
-                  longitude: r.lng,
-                  accuracy: r.accuracy || null,
-                  altitude: null,
-                  altitudeAccuracy: null,
-                  heading: null,
-                  speed: null,
-                },
-                timestamp: Date.now(),
-              } as Location.LocationObject);
-            }
+            setRascunhoId(null);
           }
         } else {
-          // Criar rascunho inicial se não existir
-          const formData = new FormData();
-          formData.append("escopoId", data.escopo.id);
-          formData.append("isDraft", "true");
-          formData.append("answers", JSON.stringify([]));
+          // Modo online: buscar rascunho da API
+          const token = await SecureStore.getItemAsync("authToken");
+          const headers: Record<string, string> = {
+            Accept: "application/json",
+          };
+          if (token) {
+            headers["Authorization"] = `Bearer ${token}`;
+          }
 
-          const criarResponse = await api.post(
-            API_ENDPOINTS.CHECKLISTS_RESPONDER,
-            formData,
+          const response = await fetch(
+            `${API_URL}${API_ENDPOINTS.CHECKLISTS_RESPONDER}?escopoId=${data.escopo.id}`,
             {
-              headers: {
-                "Content-Type": "multipart/form-data",
-              },
+              method: "GET",
+              headers,
             }
           );
 
-          if (criarResponse.data?.resposta?.id) {
-            setRascunhoId(criarResponse.data.resposta.id);
+          if (!response.ok) {
+            console.error("❌ Erro ao buscar rascunho:", {
+              status: response.status,
+              statusText: response.statusText,
+            });
+            // Se der 401, pode ser problema de autenticação
+            if (response.status === 401) {
+              console.error("❌ Token inválido ou expirado!");
+            }
+          }
+
+          const rascunhoData = await response.json();
+
+          if (rascunhoData.rascunho) {
+            const r = rascunhoData.rascunho;
+            setRascunhoId(r.id);
+
+            const local = await getLocalDraft(data.escopo.id, r.id);
+            const apiCount = r.respostas?.length ?? 0;
+            const useLocal =
+              local?.formData?.answers &&
+              Array.isArray(local.formData.answers) &&
+              local.formData.answers.length >= apiCount;
+
+            if (useLocal && local) {
+              const fd = local.formData;
+              if (fd.observacoes) setObservacoes(fd.observacoes);
+              const todasPerguntas: { id: string; tipo: string }[] = [];
+              if (data.escopo?.template?.grupos) {
+                data.escopo.template.grupos.forEach((g: any) => {
+                  if (g.perguntas?.length) todasPerguntas.push(...g.perguntas);
+                });
+              }
+              const byId = new Map(todasPerguntas.map((p) => [p.id, p]));
+              (fd.answers || []).forEach((a: any) => {
+                const pergunta = byId.get(a.perguntaId);
+                if (!pergunta) return;
+                switch (pergunta.tipo) {
+                  case "TEXTO":
+                    if (a.valorTexto)
+                      setTextAnswers((prev) => ({
+                        ...prev,
+                        [pergunta.id]: a.valorTexto,
+                      }));
+                    break;
+                  case "BOOLEANO":
+                    if (
+                      a.valorBoolean !== undefined &&
+                      a.valorBoolean !== null
+                    ) {
+                      setBooleanAnswers((prev) => ({
+                        ...prev,
+                        [pergunta.id]: a.valorBoolean
+                          ? "CONFORME"
+                          : "NAO_CONFORME",
+                      }));
+                      if (!a.valorBoolean && a.valorTexto) {
+                        try {
+                          const partes = a.valorTexto.split("\n\n");
+                          if (partes.length >= 2) {
+                            const motivo = partes[0].replace("Motivo: ", "");
+                            const resolucao = partes[1].replace(
+                              "O que foi feito para resolver: ",
+                              ""
+                            );
+                            setNaoConformeDetails((prev) => ({
+                              ...prev,
+                              [pergunta.id]: { motivo, resolucao },
+                            }));
+                          }
+                        } catch (_) {}
+                      }
+                    }
+                    break;
+                  case "NUMERICO":
+                    if (a.valorNumero != null)
+                      setNumericAnswers((prev) => ({
+                        ...prev,
+                        [pergunta.id]: String(a.valorNumero),
+                      }));
+                    break;
+                  case "SELECAO":
+                    if (a.valorOpcao)
+                      setSelectAnswers((prev) => ({
+                        ...prev,
+                        [pergunta.id]: a.valorOpcao,
+                      }));
+                    break;
+                  case "FOTO":
+                    if (a.fotoUrl) {
+                      try {
+                        const uris =
+                          typeof a.fotoUrl === "string" &&
+                          a.fotoUrl.startsWith("[")
+                            ? JSON.parse(a.fotoUrl)
+                            : [a.fotoUrl];
+                        setPhotoAnswers((prev) => ({
+                          ...prev,
+                          [pergunta.id]: uris,
+                        }));
+                      } catch (_) {
+                        setPhotoAnswers((prev) => ({
+                          ...prev,
+                          [pergunta.id]: [a.fotoUrl],
+                        }));
+                      }
+                    }
+                    break;
+                }
+                if (a.nota != null)
+                  setNotaAnswers((prev) => ({
+                    ...prev,
+                    [pergunta.id]: a.nota,
+                  }));
+              });
+              if (fd.fotos && typeof fd.fotos === "object") {
+                const next: Record<string, string[]> = {};
+                for (const [key, arr] of Object.entries(fd.fotos)) {
+                  if (!Array.isArray(arr)) continue;
+                  const uris = arr.map((x: any) => x?.uri).filter(Boolean);
+                  const validUris = (
+                    await Promise.all(
+                      uris.map(async (u) =>
+                        (await photoUriExists(u)) ? u : null
+                      )
+                    )
+                  ).filter(Boolean) as string[];
+                  if (!validUris.length) continue;
+                  if (key.startsWith("foto_anexada_")) {
+                    const pid = key.replace("foto_anexada_", "");
+                    next[`${pid}_anexo`] = validUris;
+                  } else if (key.startsWith("foto_")) {
+                    const pid = key.replace("foto_", "");
+                    next[pid] = validUris;
+                  }
+                }
+                if (Object.keys(next).length > 0) {
+                  setPhotoAnswers((prev) => ({ ...prev, ...next }));
+                }
+              }
+              // Priorizar fotoUrl da API quando disponível (URLs HTTP são sempre válidas)
+              if (r.respostas && r.respostas.length > 0) {
+                const apiFotos: Record<string, string[]> = {};
+                r.respostas.forEach((resposta: any) => {
+                  if (!resposta.fotoUrl) return;
+                  const pergunta = byId.get(resposta.perguntaId);
+                  if (!pergunta) return;
+                  try {
+                    const fotos =
+                      typeof resposta.fotoUrl === "string" &&
+                      resposta.fotoUrl.startsWith("[")
+                        ? JSON.parse(resposta.fotoUrl)
+                        : [resposta.fotoUrl];
+                    if (pergunta.tipo === "FOTO") {
+                      apiFotos[pergunta.id] = fotos;
+                    } else {
+                      apiFotos[`${pergunta.id}_anexo`] = fotos;
+                    }
+                  } catch (_) {
+                    if (pergunta.tipo === "FOTO") {
+                      apiFotos[pergunta.id] = [resposta.fotoUrl];
+                    } else {
+                      apiFotos[`${pergunta.id}_anexo`] = [resposta.fotoUrl];
+                    }
+                  }
+                });
+                if (Object.keys(apiFotos).length > 0) {
+                  setPhotoAnswers((prev) => ({ ...prev, ...apiFotos }));
+                }
+              }
+              if (fd.lat != null && fd.lng != null) {
+                setLocalizacao({
+                  coords: {
+                    latitude: fd.lat,
+                    longitude: fd.lng,
+                    accuracy: fd.accuracy ?? null,
+                    altitude: null,
+                    altitudeAccuracy: null,
+                    heading: null,
+                    speed: null,
+                  },
+                  timestamp: Date.now(),
+                } as Location.LocationObject);
+              }
+            } else {
+              if (r.observacoes) {
+                setObservacoes(r.observacoes);
+              }
+
+              // Carregar respostas do rascunho (API)
+              if (r.respostas && r.respostas.length > 0) {
+                r.respostas.forEach((resposta: any) => {
+                  const todasPerguntas: any[] = [];
+                  if (
+                    data.escopo?.template?.grupos &&
+                    Array.isArray(data.escopo.template.grupos)
+                  ) {
+                    data.escopo.template.grupos.forEach((g: any) => {
+                      if (g.perguntas && Array.isArray(g.perguntas)) {
+                        todasPerguntas.push(...g.perguntas);
+                      }
+                    });
+                  }
+                  const pergunta = todasPerguntas.find(
+                    (p) => p.id === resposta.perguntaId
+                  );
+
+                  if (!pergunta) {
+                    return;
+                  }
+
+                  switch (pergunta.tipo) {
+                    case "TEXTO":
+                      if (resposta.valorTexto) {
+                        setTextAnswers((prev) => ({
+                          ...prev,
+                          [pergunta.id]: resposta.valorTexto,
+                        }));
+                      }
+                      break;
+                    case "BOOLEANO":
+                      if (
+                        resposta.valorBoolean !== null &&
+                        resposta.valorBoolean !== undefined
+                      ) {
+                        const valor = resposta.valorBoolean
+                          ? "CONFORME"
+                          : "NAO_CONFORME";
+                        setBooleanAnswers((prev) => ({
+                          ...prev,
+                          [pergunta.id]: valor,
+                        }));
+                      }
+                      if (resposta.observacao) {
+                        try {
+                          const partes = resposta.observacao.split("\n\n");
+                          if (partes.length >= 2) {
+                            const motivo = partes[0].replace("Motivo: ", "");
+                            const resolucao = partes[1].replace(
+                              "O que foi feito para resolver: ",
+                              ""
+                            );
+                            setNaoConformeDetails((prev) => ({
+                              ...prev,
+                              [pergunta.id]: { motivo, resolucao },
+                            }));
+                          }
+                        } catch (e) {
+                          console.error("Erro ao parsear observação:", e);
+                        }
+                      }
+                      if (resposta.fotoUrl) {
+                        try {
+                          const fotos =
+                            typeof resposta.fotoUrl === "string"
+                              ? resposta.fotoUrl.startsWith("[")
+                                ? JSON.parse(resposta.fotoUrl)
+                                : [resposta.fotoUrl]
+                              : [];
+                          setPhotoAnswers((prev) => ({
+                            ...prev,
+                            [`${pergunta.id}_anexo`]: fotos,
+                          }));
+                        } catch {
+                          setPhotoAnswers((prev) => ({
+                            ...prev,
+                            [`${pergunta.id}_anexo`]: [resposta.fotoUrl],
+                          }));
+                        }
+                      }
+                      break;
+                    case "NUMERICO":
+                      if (
+                        resposta.valorNumero !== null &&
+                        resposta.valorNumero !== undefined
+                      ) {
+                        setNumericAnswers((prev) => ({
+                          ...prev,
+                          [pergunta.id]: resposta.valorNumero.toString(),
+                        }));
+                      }
+                      break;
+                    case "SELECAO":
+                      if (resposta.valorOpcao) {
+                        setSelectAnswers((prev) => ({
+                          ...prev,
+                          [pergunta.id]: resposta.valorOpcao,
+                        }));
+                      }
+                      break;
+                    case "FOTO":
+                      if (resposta.fotoUrl) {
+                        try {
+                          const fotos =
+                            typeof resposta.fotoUrl === "string"
+                              ? resposta.fotoUrl.startsWith("[")
+                                ? JSON.parse(resposta.fotoUrl)
+                                : [resposta.fotoUrl]
+                              : [];
+                          setPhotoAnswers((prev) => ({
+                            ...prev,
+                            [pergunta.id]: fotos,
+                          }));
+                        } catch {
+                          setPhotoAnswers((prev) => ({
+                            ...prev,
+                            [pergunta.id]: [resposta.fotoUrl],
+                          }));
+                        }
+                      }
+                      break;
+                  }
+
+                  if (resposta.nota !== null && resposta.nota !== undefined) {
+                    setNotaAnswers((prev) => ({
+                      ...prev,
+                      [pergunta.id]: resposta.nota,
+                    }));
+                  }
+                });
+              }
+
+              // Obter localização (só ao restaurar da API)
+              if (r.lat && r.lng) {
+                setLocalizacao({
+                  coords: {
+                    latitude: r.lat,
+                    longitude: r.lng,
+                    accuracy: r.accuracy || null,
+                    altitude: null,
+                    altitudeAccuracy: null,
+                    heading: null,
+                    speed: null,
+                  },
+                  timestamp: Date.now(),
+                } as Location.LocationObject);
+              }
+            }
+          } else {
+            // Criar rascunho inicial se não existir
+            const formData = new FormData();
+            formData.append("escopoId", data.escopo.id);
+            formData.append("isDraft", "true");
+            formData.append("answers", JSON.stringify([]));
+
+            const criarResponse = await api.post(
+              API_ENDPOINTS.CHECKLISTS_RESPONDER,
+              formData,
+              {
+                headers: {
+                  "Content-Type": "multipart/form-data",
+                },
+              }
+            );
+
+            if (criarResponse.data?.resposta?.id) {
+              setRascunhoId(criarResponse.data.resposta.id);
+            }
           }
         }
       } catch (rascunhoError) {
@@ -753,16 +1002,20 @@ export default function ResponderChecklistScreen() {
       }
     } catch (error: any) {
       console.error("Erro ao carregar escopo:", error);
-      
+
       let errorMessage = "Não foi possível carregar o checklist.";
       if (error?.response?.status === 401) {
         errorMessage = "Sessão expirada. Faça login novamente.";
       } else if (error?.response?.status === 404) {
         errorMessage = "Checklist não encontrado. Ele pode ter sido removido.";
-      } else if (error?.code === "NETWORK_ERROR" || error?.message?.includes("Network")) {
-        errorMessage = "Erro de conexão. Verifique sua internet e tente novamente.";
+      } else if (
+        error?.code === "NETWORK_ERROR" ||
+        error?.message?.includes("Network")
+      ) {
+        errorMessage =
+          "Erro de conexão. Verifique sua internet e tente novamente.";
       }
-      
+
       Alert.alert("Erro", errorMessage, [
         {
           text: "OK",
@@ -816,9 +1069,9 @@ export default function ResponderChecklistScreen() {
     async (perguntaId: string, permiteMultiplas: boolean) => {
       try {
         const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsEditing: true,
-          quality: 0.8,
+          mediaTypes: ["images"],
+          allowsEditing: false,
+          quality: 0.6,
           allowsMultipleSelection: permiteMultiplas,
         });
 
@@ -866,9 +1119,9 @@ export default function ResponderChecklistScreen() {
         }
 
         const result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsEditing: true,
-          quality: 0.8,
+          mediaTypes: ["images"],
+          allowsEditing: false,
+          quality: 0.6,
           allowsMultipleSelection: false,
         });
 
@@ -928,8 +1181,10 @@ export default function ResponderChecklistScreen() {
                   naoConformeDetails[pergunta.id].resolucao
                 }`;
               }
-              
-              console.log(`[prepararRespostas] ✅ BOOLEANO - perguntaId: ${pergunta.id}, valorBoolean: ${resposta.valorBoolean}, valorOpcao: ${resposta.valorOpcao}`);
+
+              console.log(
+                `[prepararRespostas] ✅ BOOLEANO - perguntaId: ${pergunta.id}, valorBoolean: ${resposta.valorBoolean}, valorOpcao: ${resposta.valorOpcao}`
+              );
             }
             break;
           case "NUMERICO":
@@ -943,19 +1198,22 @@ export default function ResponderChecklistScreen() {
             }
             break;
           case "FOTO":
-            // Para fotos principais, verificar se são URLs já salvas ou locais
+            // Para fotos principais: incluir URLs HTTP no JSON (fotos já salvas no rascunho).
+            // Fotos locais são enviadas via FormData. O backend aceita ambos e faz o merge.
             if (
               photoAnswers[pergunta.id] &&
               photoAnswers[pergunta.id].length > 0
             ) {
-              // Se todas as fotos são URLs (já salvas), incluir no JSON
-              const todasSalvas = photoAnswers[pergunta.id].every(
+              const urlsHttp = photoAnswers[pergunta.id].filter(
                 (uri) => uri.startsWith("http://") || uri.startsWith("https://")
               );
-              if (todasSalvas) {
-                resposta.fotoUrl = JSON.stringify(photoAnswers[pergunta.id]);
+              if (urlsHttp.length > 0) {
+                resposta.fotoUrl =
+                  urlsHttp.length === 1
+                    ? urlsHttp[0]
+                    : JSON.stringify(urlsHttp);
               }
-              // Se são locais, serão enviadas via FormData e não precisam estar no JSON
+              // Fotos locais (file://, content://) são enviadas via FormData
             }
             break;
         }
@@ -982,9 +1240,15 @@ export default function ResponderChecklistScreen() {
             if (resposta.fotoUrl) {
               try {
                 const fotosExistentes = JSON.parse(resposta.fotoUrl);
-                resposta.fotoUrl = JSON.stringify([...fotosExistentes, ...fotosAnexadas]);
+                resposta.fotoUrl = JSON.stringify([
+                  ...fotosExistentes,
+                  ...fotosAnexadas,
+                ]);
               } catch {
-                resposta.fotoUrl = JSON.stringify([resposta.fotoUrl, ...fotosAnexadas]);
+                resposta.fotoUrl = JSON.stringify([
+                  resposta.fotoUrl,
+                  ...fotosAnexadas,
+                ]);
               }
             } else {
               resposta.fotoUrl = JSON.stringify(fotosAnexadas);
@@ -1025,11 +1289,17 @@ export default function ResponderChecklistScreen() {
 
         // CRÍTICO: Para respostas BOOLEANO, SEMPRE incluir se tiver valorBoolean definido
         // Isso garante que respostas CONFORME sejam salvas mesmo sem fotos
-        const isBooleanComValor = pergunta.tipo === "BOOLEANO" && resposta.valorBoolean !== undefined;
-        
+        const isBooleanComValor =
+          pergunta.tipo === "BOOLEANO" && resposta.valorBoolean !== undefined;
+
         // CRÍTICO: Se tem fotos anexadas locais, SEMPRE incluir a resposta para garantir que sejam enviadas
         // CRÍTICO: Se é BOOLEANO com valor, SEMPRE incluir mesmo sem fotos
-        if (temQualquerDado || temFotosLocaisAnexadas || temFotosLocaisPrincipais || isBooleanComValor) {
+        if (
+          temQualquerDado ||
+          temFotosLocaisAnexadas ||
+          temFotosLocaisPrincipais ||
+          isBooleanComValor
+        ) {
           respostas.push(resposta);
           console.log(
             `[prepararRespostas] ✅ Resposta adicionada - perguntaId: ${
@@ -1038,7 +1308,9 @@ export default function ResponderChecklistScreen() {
               resposta.valorBoolean !== undefined
             }, valorBoolean: ${resposta.valorBoolean}, temNota: ${
               resposta.nota !== undefined
-            }, temFotosAnexadas: ${fotosAnexadas.length > 0}, temFotosLocaisAnexadas: ${temFotosLocaisAnexadas}, temFotosLocaisPrincipais: ${temFotosLocaisPrincipais}, isBooleanComValor: ${isBooleanComValor}`
+            }, temFotosAnexadas: ${
+              fotosAnexadas.length > 0
+            }, temFotosLocaisAnexadas: ${temFotosLocaisAnexadas}, temFotosLocaisPrincipais: ${temFotosLocaisPrincipais}, isBooleanComValor: ${isBooleanComValor}`
           );
         } else {
           // Se não tem dados mas tem nota, incluir apenas a nota
@@ -1101,9 +1373,11 @@ export default function ResponderChecklistScreen() {
 
   const salvarRascunho = useCallback(
     async (showToast = false) => {
-      if (!escopo || !rascunhoId) {
-        return;
-      }
+      if (!escopo) return;
+      // Offline: pode salvar localmente mesmo sem rascunhoId.
+      // Online sem rascunhoId: API cria novo rascunho e retorna o id (não bloquear).
+      const netStatus = await NetInfo.fetch();
+      const isOffline = !netStatus.isConnected;
 
       try {
         setSalvandoRascunho(true);
@@ -1142,7 +1416,10 @@ export default function ResponderChecklistScreen() {
             }
             // Fotos anexadas - SEMPRE incluir se existirem, independente do tipo de pergunta ou resposta
             // Isso garante que fotos sejam salvas mesmo quando marca como CONFORME
-            if (photoAnswers[`${pergunta.id}_anexo`] && photoAnswers[`${pergunta.id}_anexo`].length > 0) {
+            if (
+              photoAnswers[`${pergunta.id}_anexo`] &&
+              photoAnswers[`${pergunta.id}_anexo`].length > 0
+            ) {
               const fotosAnexadas = photoAnswers[`${pergunta.id}_anexo`];
               draftData.fotos[`foto_anexada_${pergunta.id}`] =
                 fotosAnexadas.map((fotoUri, index) => ({
@@ -1152,6 +1429,37 @@ export default function ResponderChecklistScreen() {
                 }));
             }
           }
+        }
+
+        // CRÍTICO: Copiar fotos para armazenamento permanente antes de salvar.
+        // URIs temporários (cache/ImagePicker) são invalidados quando o app fecha.
+        // Processar sequencialmente para evitar OOM em dispositivos com pouca memória.
+        for (const [key, arr] of Object.entries(draftData.fotos)) {
+          const copied: any[] = [];
+          for (let index = 0; index < arr.length; index++) {
+            const foto = arr[index];
+            const uri = foto?.uri;
+            if (
+              !uri ||
+              (!uri.startsWith("file://") &&
+                !uri.startsWith("content://") &&
+                !uri.startsWith("/"))
+            ) {
+              copied.push(foto);
+              continue;
+            }
+            const perguntaId = key
+              .replace("foto_anexada_", "")
+              .replace("foto_", "");
+            const newUri = await copyPhotoToPermanentStorage(
+              uri,
+              escopo.escopo.id,
+              perguntaId,
+              index
+            );
+            copied.push({ ...foto, uri: newUri });
+          }
+          draftData.fotos[key] = copied;
         }
 
         // Verificar conectividade
@@ -1178,7 +1486,7 @@ export default function ResponderChecklistScreen() {
         // Tentar salvar no servidor quando online
         const formData = new FormData();
         formData.append("escopoId", escopo.escopo.id);
-        formData.append("respostaId", rascunhoId);
+        if (rascunhoId) formData.append("respostaId", rascunhoId);
         formData.append("isDraft", "true");
 
         // Garantir que observacoes seja uma string válida
@@ -1197,7 +1505,12 @@ export default function ResponderChecklistScreen() {
 
         // Coletar fotos, comprimir em paralelo e adicionar ao FormData (evita 413)
         // CRÍTICO: Garantir que TODAS as fotos sejam coletadas, incluindo anexadas
-        const photoEntries: { formKey: string; uri: string; type: string; name: string }[] = [];
+        const photoEntries: {
+          formKey: string;
+          uri: string;
+          type: string;
+          name: string;
+        }[] = [];
         for (const [key, fotos] of Object.entries(draftData.fotos)) {
           if (Array.isArray(fotos) && fotos.length > 0) {
             fotos.forEach((foto: any, index: number) => {
@@ -1226,16 +1539,30 @@ export default function ResponderChecklistScreen() {
             });
           }
         }
-        
-        console.log(`[salvarRascunho] 📸 Fotos coletadas para upload: ${photoEntries.length}`, {
-          photoEntries: photoEntries.map(e => ({ formKey: e.formKey, name: e.name }))
-        });
-        const compressed = await Promise.all(
-          photoEntries.map(async (e) => ({
-            ...e,
-            uri: (await compressImageForUpload(e.uri)).uri,
-          }))
+
+        console.log(
+          `[salvarRascunho] 📸 Fotos coletadas para upload: ${photoEntries.length}`,
+          {
+            photoEntries: photoEntries.map((e) => ({
+              formKey: e.formKey,
+              name: e.name,
+            })),
+          }
         );
+        // Comprimir sequencialmente para evitar OOM com muitas fotos em dispositivos Android
+        const compressed: typeof photoEntries = [];
+        for (const e of photoEntries) {
+          try {
+            const result = await compressImageForUpload(e.uri);
+            compressed.push({ ...e, uri: result.uri });
+          } catch (err) {
+            console.warn(
+              `[salvarRascunho] Erro ao comprimir ${e.formKey}, usando original:`,
+              err
+            );
+            compressed.push(e);
+          }
+        }
         for (const e of compressed) {
           formData.append(e.formKey, {
             uri: e.uri,
@@ -1300,7 +1627,7 @@ export default function ResponderChecklistScreen() {
       } catch (error: any) {
         console.error("Erro ao salvar rascunho:", error);
 
-        // Em caso de erro, tentar salvar localmente
+        // Em caso de erro, tentar salvar localmente (incluindo fotos)
         try {
           const respostas = prepararRespostas();
           const draftData = {
@@ -1311,6 +1638,55 @@ export default function ResponderChecklistScreen() {
             accuracy: localizacao?.coords.accuracy || 0,
             fotos: {} as Record<string, any[]>,
           };
+          for (const grupo of escopo!.escopo.template.grupos) {
+            for (const pergunta of grupo.perguntas) {
+              if (pergunta.tipo === "FOTO" && photoAnswers[pergunta.id]) {
+                draftData.fotos[`foto_${pergunta.id}`] = photoAnswers[
+                  pergunta.id
+                ].map((fotoUri) => ({
+                  uri: fotoUri,
+                  type: "image/jpeg",
+                  name: `foto_${pergunta.id}.jpg`,
+                }));
+              }
+              if (photoAnswers[`${pergunta.id}_anexo`]?.length > 0) {
+                draftData.fotos[`foto_anexada_${pergunta.id}`] = photoAnswers[
+                  `${pergunta.id}_anexo`
+                ].map((fotoUri, index) => ({
+                  uri: fotoUri,
+                  type: "image/jpeg",
+                  name: `foto_anexada_${pergunta.id}_${index}.jpg`,
+                }));
+              }
+            }
+          }
+          for (const [key, arr] of Object.entries(draftData.fotos)) {
+            const copied: any[] = [];
+            for (let index = 0; index < arr.length; index++) {
+              const foto = arr[index];
+              const uri = foto?.uri;
+              if (
+                !uri ||
+                (!uri.startsWith("file://") &&
+                  !uri.startsWith("content://") &&
+                  !uri.startsWith("/"))
+              ) {
+                copied.push(foto);
+                continue;
+              }
+              const perguntaId = key
+                .replace("foto_anexada_", "")
+                .replace("foto_", "");
+              const newUri = await copyPhotoToPermanentStorage(
+                uri,
+                escopo!.escopo.id,
+                perguntaId,
+                index
+              );
+              copied.push({ ...foto, uri: newUri });
+            }
+            draftData.fotos[key] = copied;
+          }
 
           await saveDraftLocally(escopo!.escopo.id, rascunhoId, draftData);
           const status = await getSyncStatus();
@@ -1348,7 +1724,7 @@ export default function ResponderChecklistScreen() {
 
   // Auto-salvar rascunho após mudanças (só depois do carregamento inicial)
   useEffect(() => {
-    if (!initialLoadDoneRef.current || !escopo || rascunhoId === null || salvandoRascunho) return;
+    if (!initialLoadDoneRef.current || !escopo || salvandoRascunho) return;
 
     // Verificar se há qualquer resposta ou foto
     // CRÍTICO: Incluir booleanAnswers mesmo que seja apenas CONFORME
@@ -1381,12 +1757,13 @@ export default function ResponderChecklistScreen() {
       clearTimeout(autoSaveTimeoutRef.current);
     }
 
-    // Auto-salvar após 2 segundos de inatividade
+    // Auto-salvar: 1s no Android (mais responsivo), 2s no iOS
+    const delay = Platform.OS === "android" ? 1000 : 2000;
     autoSaveTimeoutRef.current = setTimeout(() => {
       salvarRascunho(false).catch((error) => {
         console.error("Erro no auto-save:", error);
       });
-    }, 2000);
+    }, delay);
 
     return () => {
       if (autoSaveTimeoutRef.current) {
@@ -1514,10 +1891,9 @@ export default function ResponderChecklistScreen() {
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
+        mediaTypes: ["images"],
+        allowsEditing: false,
         quality: 0.8,
-        aspect: [1, 1], // Selfie quadrada
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -1556,7 +1932,7 @@ export default function ResponderChecklistScreen() {
         formData.append("respostaId", rascunhoId);
       }
       formData.append("isDraft", "false");
-      
+
       // Observações (só enviar se não estiver vazio)
       if (observacoes && observacoes.trim()) {
         formData.append("observacoes", observacoes.trim());
@@ -1616,17 +1992,21 @@ export default function ResponderChecklistScreen() {
         uri: string;
         name: string;
         perguntaId: string;
-        tipo: 'principal' | 'anexada';
+        tipo: "principal" | "anexada";
       }[] = [];
-      
+
       const grupos = escopo.escopo.template.grupos;
       for (const grupo of grupos) {
         for (const pergunta of grupo.perguntas) {
           // 1. Fotos principais (tipo FOTO)
-          if (pergunta.tipo === "FOTO" && photoAnswers[pergunta.id] && photoAnswers[pergunta.id].length > 0) {
+          if (
+            pergunta.tipo === "FOTO" &&
+            photoAnswers[pergunta.id] &&
+            photoAnswers[pergunta.id].length > 0
+          ) {
             const fotos = photoAnswers[pergunta.id];
             const permiteMultiplas = pergunta.permiteMultiplasFotos ?? false;
-            
+
             fotos.forEach((fotoUri: string, index: number) => {
               // Só coletar fotos locais (não URLs já salvas)
               if (
@@ -1645,18 +2025,23 @@ export default function ResponderChecklistScreen() {
                     ? `foto_${pergunta.id}_${index}.jpg`
                     : `foto_${pergunta.id}.jpg`,
                   perguntaId: pergunta.id,
-                  tipo: 'principal',
+                  tipo: "principal",
                 });
                 if (__DEV__) {
-                  console.log(`[finalizarChecklist] 📸 Foto principal coletada: perguntaId=${pergunta.id}, index=${index}, formKey=${formKey}`);
+                  console.log(
+                    `[finalizarChecklist] 📸 Foto principal coletada: perguntaId=${pergunta.id}, index=${index}, formKey=${formKey}`
+                  );
                 }
               }
             });
           }
-          
+
           // 2. Fotos anexadas (para TODAS as perguntas, independente do tipo)
           // CRÍTICO: Sempre coletar fotos anexadas, mesmo quando resposta é CONFORME
-          if (photoAnswers[`${pergunta.id}_anexo`] && photoAnswers[`${pergunta.id}_anexo`].length > 0) {
+          if (
+            photoAnswers[`${pergunta.id}_anexo`] &&
+            photoAnswers[`${pergunta.id}_anexo`].length > 0
+          ) {
             const fotosAnexadas = photoAnswers[`${pergunta.id}_anexo`];
             fotosAnexadas.forEach((fotoUri: string, index: number) => {
               // Só coletar fotos locais (não URLs já salvas)
@@ -1671,46 +2056,53 @@ export default function ResponderChecklistScreen() {
                   uri: fotoUri,
                   name: `foto_anexada_${pergunta.id}_${index}.jpg`,
                   perguntaId: pergunta.id,
-                  tipo: 'anexada',
+                  tipo: "anexada",
                 });
                 if (__DEV__) {
-                  console.log(`[finalizarChecklist] 📸 Foto anexada coletada: perguntaId=${pergunta.id}, index=${index}`);
+                  console.log(
+                    `[finalizarChecklist] 📸 Foto anexada coletada: perguntaId=${pergunta.id}, index=${index}`
+                  );
                 }
               }
             });
           }
         }
       }
-      
+
       if (__DEV__) {
-        console.log(`[finalizarChecklist] 📊 Total de fotos coletadas: ${photoEntries.length}`, {
-          principais: photoEntries.filter(e => e.tipo === 'principal').length,
-          anexadas: photoEntries.filter(e => e.tipo === 'anexada').length,
-        });
+        console.log(
+          `[finalizarChecklist] 📊 Total de fotos coletadas: ${photoEntries.length}`,
+          {
+            principais: photoEntries.filter((e) => e.tipo === "principal")
+              .length,
+            anexadas: photoEntries.filter((e) => e.tipo === "anexada").length,
+          }
+        );
       }
-      // Comprimir TODAS as fotos em paralelo (igual ao web)
+      // Comprimir fotos sequencialmente para evitar OOM em dispositivos Android
       // CRÍTICO: Comprimir todas antes de adicionar ao FormData para evitar 413
       if (photoEntries.length > 0) {
         if (__DEV__) {
-          console.log(`[finalizarChecklist] 🔄 Comprimindo ${photoEntries.length} fotos...`);
+          console.log(
+            `[finalizarChecklist] 🔄 Comprimindo ${photoEntries.length} fotos...`
+          );
         }
-        
-        const compressedPhotos = await Promise.all(
-          photoEntries.map(async (e) => {
-            try {
-              const compressed = await compressImageForUpload(e.uri);
-              return {
-                ...e,
-                uri: compressed.uri,
-              };
-            } catch (error) {
-              console.error(`[finalizarChecklist] ❌ Erro ao comprimir foto ${e.formKey}:`, error);
-              // Em caso de erro, usar foto original (pode causar 413, mas melhor que perder a foto)
-              return e;
-            }
-          })
-        );
-        
+
+        const compressedPhotos: typeof photoEntries = [];
+        for (const e of photoEntries) {
+          try {
+            const compressed = await compressImageForUpload(e.uri);
+            compressedPhotos.push({ ...e, uri: compressed.uri });
+          } catch (error) {
+            console.error(
+              `[finalizarChecklist] ❌ Erro ao comprimir foto ${e.formKey}:`,
+              error
+            );
+            // Em caso de erro, usar foto original (pode causar 413, mas melhor que perder a foto)
+            compressedPhotos.push(e);
+          }
+        }
+
         // Adicionar fotos comprimidas ao FormData
         for (const e of compressedPhotos) {
           if (e.uri) {
@@ -1720,20 +2112,29 @@ export default function ResponderChecklistScreen() {
               name: e.name,
             } as any);
             if (__DEV__) {
-              console.log(`[finalizarChecklist] ✅ Foto adicionada ao FormData: ${e.formKey} (${e.name})`);
+              console.log(
+                `[finalizarChecklist] ✅ Foto adicionada ao FormData: ${e.formKey} (${e.name})`
+              );
             }
           }
         }
-        
+
         if (__DEV__) {
-          console.log(`[finalizarChecklist] 📸 Total de fotos no FormData: ${compressedPhotos.length}`, {
-            principais: compressedPhotos.filter(e => e.tipo === 'principal').length,
-            anexadas: compressedPhotos.filter(e => e.tipo === 'anexada').length,
-          });
+          console.log(
+            `[finalizarChecklist] 📸 Total de fotos no FormData: ${compressedPhotos.length}`,
+            {
+              principais: compressedPhotos.filter((e) => e.tipo === "principal")
+                .length,
+              anexadas: compressedPhotos.filter((e) => e.tipo === "anexada")
+                .length,
+            }
+          );
         }
       } else {
         if (__DEV__) {
-          console.log(`[finalizarChecklist] ℹ️ Nenhuma foto local para enviar (todas já estão salvas como URLs)`);
+          console.log(
+            `[finalizarChecklist] ℹ️ Nenhuma foto local para enviar (todas já estão salvas como URLs)`
+          );
         }
       }
 
@@ -1753,7 +2154,7 @@ export default function ResponderChecklistScreen() {
       if (__DEV__) {
         console.log(`[finalizarChecklist] 🚀 Enviando checklist:`, {
           escopoId: escopo.escopo.id,
-          respostaId: rascunhoId || 'nova',
+          respostaId: rascunhoId || "nova",
           totalRespostas: respostas.length,
           totalFotos: photoEntries.length,
           temAssinaturaGerente: !!assinaturaGerenteDataUrl,
@@ -1782,7 +2183,7 @@ export default function ResponderChecklistScreen() {
           totalRespostas: respostas.length,
           totalFotos: photoEntries.length,
         });
-        
+
         // Mensagem de erro mais detalhada
         let errorMessage = "Erro ao finalizar checklist";
         if (errorData?.message) {
@@ -1790,23 +2191,28 @@ export default function ResponderChecklistScreen() {
         } else if (errorData?.error) {
           errorMessage = errorData.error;
         } else if (response.status === 413) {
-          errorMessage = "O checklist é muito grande. Tente reduzir o número de fotos.";
+          errorMessage =
+            "O checklist é muito grande. Tente reduzir o número de fotos.";
         } else if (response.status === 422) {
-          errorMessage = "Dados inválidos. Verifique se todas as perguntas obrigatórias foram respondidas.";
+          errorMessage =
+            "Dados inválidos. Verifique se todas as perguntas obrigatórias foram respondidas.";
         } else if (response.status === 401) {
           errorMessage = "Sessão expirada. Faça login novamente.";
         }
-        
+
         throw new Error(errorMessage);
       }
-      
+
       const result = await response.json().catch(() => ({}));
-      
+
       if (__DEV__) {
-        console.log(`[finalizarChecklist] ✅ Checklist finalizado com sucesso!`, {
-          respostaId: result?.resposta?.id || result?.id,
-          protocolo: result?.protocolo,
-        });
+        console.log(
+          `[finalizarChecklist] ✅ Checklist finalizado com sucesso!`,
+          {
+            respostaId: result?.resposta?.id || result?.id,
+            protocolo: result?.protocolo,
+          }
+        );
       }
 
       Alert.alert("Sucesso", "Checklist finalizado com sucesso!", [
@@ -1828,7 +2234,10 @@ export default function ResponderChecklistScreen() {
                     try {
                       navigation.navigate("Checklists" as never);
                     } catch (fallbackError) {
-                      console.error("Erro no fallback de navegação:", fallbackError);
+                      console.error(
+                        "Erro no fallback de navegação:",
+                        fallbackError
+                      );
                     }
                   }
                 }, 100);
@@ -1841,20 +2250,25 @@ export default function ResponderChecklistScreen() {
       ]);
     } catch (error: any) {
       console.error("Erro ao finalizar checklist:", error);
-      
+
       // Não fechar o modal em caso de erro - deixar o usuário tentar novamente
       let errorMessage = "Não foi possível finalizar o checklist.";
-      
+
       if (error?.message) {
         errorMessage = error.message;
       } else if (error?.response?.status === 413) {
-        errorMessage = "O checklist é muito grande. Tente reduzir o número de fotos.";
+        errorMessage =
+          "O checklist é muito grande. Tente reduzir o número de fotos.";
       } else if (error?.response?.status === 401) {
         errorMessage = "Sessão expirada. Faça login novamente.";
-      } else if (error?.code === "NETWORK_ERROR" || error?.message?.includes("Network")) {
-        errorMessage = "Erro de conexão. Verifique sua internet e tente novamente.";
+      } else if (
+        error?.code === "NETWORK_ERROR" ||
+        error?.message?.includes("Network")
+      ) {
+        errorMessage =
+          "Erro de conexão. Verifique sua internet e tente novamente.";
       }
-      
+
       Alert.alert("Erro", errorMessage);
     } finally {
       setEnviando(false);
@@ -1874,7 +2288,44 @@ export default function ResponderChecklistScreen() {
     navigation,
   ]);
 
-  // Early return se estiver carregando ou não tiver escopo
+  // IMPORTANTE: Hooks devem ser chamados antes de qualquer early return (Rules of Hooks)
+  const gruposOrdenados = escopo?.escopo?.template?.grupos
+    ? [...escopo.escopo.template.grupos].sort((a, b) => a.ordem - b.ordem)
+    : [];
+
+  const todasPerguntas = useMemo(() => {
+    const lista: { pergunta: Pergunta; grupo: Grupo }[] = [];
+    gruposOrdenados.forEach((grupo) => {
+      grupo.perguntas
+        .sort((a, b) => a.ordem - b.ordem)
+        .forEach((pergunta) => {
+          lista.push({ pergunta: pergunta as Pergunta, grupo: grupo as Grupo });
+        });
+    });
+    return lista;
+  }, [gruposOrdenados]);
+
+  const perguntaAtual = todasPerguntas[currentQuestionIndex];
+  const totalPerguntas = todasPerguntas.length;
+  const isUltimaPergunta =
+    totalPerguntas > 0 && currentQuestionIndex >= totalPerguntas - 1;
+
+  const avancarPergunta = useCallback(async () => {
+    if (currentQuestionIndex < totalPerguntas - 1) {
+      setCurrentQuestionIndex((prev) => prev + 1);
+      InteractionManager.runAfterInteractions(() => {
+        salvarRascunho(false).catch((e) => console.error("Erro ao salvar:", e));
+      });
+    }
+  }, [currentQuestionIndex, totalPerguntas, salvarRascunho]);
+
+  const voltarPergunta = useCallback(() => {
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex((prev) => prev - 1);
+    }
+  }, [currentQuestionIndex]);
+
+  // Early return DEPOIS de todos os hooks
   if (loading || !escopo) {
     return (
       <View style={styles.loadingContainer}>
@@ -1883,10 +2334,6 @@ export default function ResponderChecklistScreen() {
       </View>
     );
   }
-
-  const gruposOrdenados = [...escopo.escopo.template.grupos].sort(
-    (a, b) => a.ordem - b.ordem
-  );
 
   return (
     <KeyboardAvoidingView
@@ -1906,11 +2353,11 @@ export default function ResponderChecklistScreen() {
           <Text style={styles.headerTitle} numberOfLines={2}>
             {escopo.escopo.template.titulo}
           </Text>
-          {escopo.escopo.unidade && (
-            <Text style={styles.headerSubtitle}>
-              {escopo.escopo.unidade.nome}
-            </Text>
-          )}
+          <Text style={styles.headerSubtitle}>
+            {escopo.escopo.unidade?.nome || ""}
+            {escopo.escopo.unidade ? " • " : ""}Pergunta{" "}
+            {currentQuestionIndex + 1} de {totalPerguntas}
+          </Text>
         </View>
         <View style={styles.headerRight}>
           {/* Indicador de status de sincronização */}
@@ -1953,78 +2400,86 @@ export default function ResponderChecklistScreen() {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        {gruposOrdenados.map((grupo) => (
-          <View key={grupo.id} style={styles.grupoContainer}>
-            <Text style={styles.grupoTitulo}>{grupo.titulo}</Text>
-            {grupo.descricao && (
-              <Text style={styles.grupoDescricao}>{grupo.descricao}</Text>
-            )}
+        {totalPerguntas === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyTitle}>
+              Nenhuma pergunta neste checklist
+            </Text>
+            <Text style={styles.emptyText}>
+              Este checklist não possui perguntas configuradas.
+            </Text>
+          </View>
+        ) : (
+          perguntaAtual && (
+            <View key={perguntaAtual.pergunta.id} style={styles.grupoContainer}>
+              <Text style={styles.grupoTitulo}>
+                {perguntaAtual.grupo.titulo}
+              </Text>
+              {perguntaAtual.grupo.descricao && (
+                <Text style={styles.grupoDescricao}>
+                  {perguntaAtual.grupo.descricao}
+                </Text>
+              )}
 
-            {grupo.perguntas
-              .sort((a, b) => a.ordem - b.ordem)
-              .map((pergunta) => (
-                <View key={pergunta.id} style={styles.perguntaContainer}>
-                  <View style={styles.perguntaHeader}>
-                    <Text style={styles.perguntaTitulo}>
-                      {pergunta.titulo}
-                      {pergunta.obrigatoria && (
-                        <Text style={styles.obrigatorio}> *</Text>
-                      )}
-                    </Text>
-                    {pergunta.descricao && (
-                      <Text style={styles.perguntaDescricao}>
-                        {pergunta.descricao}
-                      </Text>
+              <View style={styles.perguntaContainer}>
+                <View style={styles.perguntaHeader}>
+                  <Text style={styles.perguntaTitulo}>
+                    {perguntaAtual.pergunta.titulo}
+                    {perguntaAtual.pergunta.obrigatoria && (
+                      <Text style={styles.obrigatorio}> *</Text>
                     )}
-                  </View>
-
-                  {/* Renderizar input baseado no tipo */}
-                  {pergunta.tipo === "TEXTO" && (
-                    <>
-                      <TextInput
-                        style={styles.textInput}
-                        value={textAnswers[pergunta.id] || ""}
-                        onChangeText={(text) =>
-                          setTextAnswers((prev) => ({
-                            ...prev,
-                            [pergunta.id]: text,
-                          }))
-                        }
-                        placeholder="Digite sua resposta..."
-                        multiline={true}
-                        numberOfLines={4}
-                      />
-                    </>
+                  </Text>
+                  {perguntaAtual.pergunta.descricao && (
+                    <Text style={styles.perguntaDescricao}>
+                      {perguntaAtual.pergunta.descricao}
+                    </Text>
                   )}
+                </View>
 
-                  {pergunta.tipo === "BOOLEANO" && (
-                    <View style={styles.booleanContainer}>
-                      {(
-                        ["CONFORME", "NAO_CONFORME", "NAO_APLICA"] as const
-                      ).map((opcao) => (
+                {/* Renderizar input baseado no tipo */}
+                {perguntaAtual.pergunta.tipo === "TEXTO" && (
+                  <>
+                    <TextInput
+                      style={styles.textInput}
+                      value={textAnswers[perguntaAtual.pergunta.id] || ""}
+                      onChangeText={(text) =>
+                        setTextAnswers((prev) => ({
+                          ...prev,
+                          [perguntaAtual.pergunta.id]: text,
+                        }))
+                      }
+                      placeholder="Digite sua resposta..."
+                      multiline={true}
+                      numberOfLines={4}
+                    />
+                  </>
+                )}
+
+                {perguntaAtual.pergunta.tipo === "BOOLEANO" && (
+                  <View style={styles.booleanContainer}>
+                    {(["CONFORME", "NAO_CONFORME", "NAO_APLICA"] as const).map(
+                      (opcao) => (
                         <TouchableOpacity
                           key={opcao}
                           style={[
                             styles.booleanButton,
-                            booleanAnswers[pergunta.id] === opcao
+                            booleanAnswers[perguntaAtual.pergunta.id] === opcao
                               ? styles.booleanButtonSelected
                               : null,
                             { marginRight: 8, marginBottom: 8 },
                           ]}
                           onPress={() => {
-                            console.log(
-                              `[BOOLEANO] Selecionando opção: ${opcao} para pergunta: ${pergunta.id} (${pergunta.titulo})`
-                            );
                             setBooleanAnswers((prev) => ({
                               ...prev,
-                              [pergunta.id]: opcao,
+                              [perguntaAtual.pergunta.id]: opcao,
                             }));
                           }}
                         >
                           <Text
                             style={[
                               styles.booleanButtonText,
-                              booleanAnswers[pergunta.id] === opcao
+                              booleanAnswers[perguntaAtual.pergunta.id] ===
+                              opcao
                                 ? styles.booleanButtonTextSelected
                                 : null,
                             ]}
@@ -2036,220 +2491,233 @@ export default function ResponderChecklistScreen() {
                               : "Não Aplica"}
                           </Text>
                         </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
+                      )
+                    )}
+                  </View>
+                )}
 
-                  {pergunta.tipo === "NUMERICO" && (
-                    <TextInput
-                      style={styles.textInput}
-                      value={numericAnswers[pergunta.id] || ""}
-                      onChangeText={(text) => {
-                        const numericValue = text.replace(/[^0-9.,]/g, "");
-                        setNumericAnswers((prev) => ({
-                          ...prev,
-                          [pergunta.id]: numericValue,
-                        }));
-                      }}
-                      placeholder="Digite um número..."
-                      keyboardType="numeric"
-                    />
-                  )}
+                {perguntaAtual.pergunta.tipo === "NUMERICO" && (
+                  <TextInput
+                    style={styles.textInput}
+                    value={numericAnswers[perguntaAtual.pergunta.id] || ""}
+                    onChangeText={(text) => {
+                      const numericValue = text.replace(/[^0-9.,]/g, "");
+                      setNumericAnswers((prev) => ({
+                        ...prev,
+                        [perguntaAtual.pergunta.id]: numericValue,
+                      }));
+                    }}
+                    placeholder="Digite um número..."
+                    keyboardType="numeric"
+                  />
+                )}
 
-                  {pergunta.tipo === "SELECAO" && (
-                    <View style={styles.selectContainer}>
-                      {pergunta.opcoes.map((opcao) => (
-                        <TouchableOpacity
-                          key={opcao}
+                {perguntaAtual.pergunta.tipo === "SELECAO" && (
+                  <View style={styles.selectContainer}>
+                    {perguntaAtual.pergunta.opcoes.map((opcao) => (
+                      <TouchableOpacity
+                        key={opcao}
+                        style={[
+                          styles.selectButton,
+                          selectAnswers[perguntaAtual.pergunta.id] === opcao
+                            ? styles.selectButtonSelected
+                            : null,
+                          { marginBottom: 8 },
+                        ]}
+                        onPress={() =>
+                          setSelectAnswers((prev) => ({
+                            ...prev,
+                            [perguntaAtual.pergunta.id]: opcao,
+                          }))
+                        }
+                      >
+                        <Text
                           style={[
-                            styles.selectButton,
-                            selectAnswers[pergunta.id] === opcao
-                              ? styles.selectButtonSelected
+                            styles.selectButtonText,
+                            selectAnswers[perguntaAtual.pergunta.id] === opcao
+                              ? styles.selectButtonTextSelected
                               : null,
-                            { marginBottom: 8 },
+                          ]}
+                        >
+                          {opcao}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
+                {/* Sistema de Avaliação 1-5 - Mostrar em TODAS as perguntas */}
+                <View style={styles.avaliacaoContainer}>
+                  <Text style={styles.avaliacaoLabel}>
+                    Avaliação{" "}
+                    {perguntaAtual.pergunta.peso
+                      ? `(Peso ${perguntaAtual.pergunta.peso})`
+                      : ""}
+                  </Text>
+                  <Text style={styles.avaliacaoSubtitle}>
+                    Selecione a nota que melhor representa a situação
+                  </Text>
+                  <View style={styles.avaliacaoButtons}>
+                    {[1, 2, 3, 4, 5].map((nota) => {
+                      const cores = {
+                        1: "#f44336", // Vermelho - Péssimo
+                        2: "#FF9800", // Laranja - Ruim
+                        3: "#FFC107", // Amarelo - Regular
+                        4: "#4CAF50", // Verde - Bom
+                        5: "#8BC34A", // Verde claro - Ótimo
+                      };
+                      const labels = {
+                        1: "Péssimo",
+                        2: "Ruim",
+                        3: "Regular",
+                        4: "Bom",
+                        5: "Ótimo",
+                      };
+                      const isSelected =
+                        notaAnswers[perguntaAtual.pergunta.id] === nota;
+                      return (
+                        <TouchableOpacity
+                          key={nota}
+                          style={[
+                            styles.avaliacaoButton,
+                            isSelected && styles.avaliacaoButtonSelected,
+                            {
+                              borderColor: cores[nota as keyof typeof cores],
+                            },
+                            isSelected && {
+                              backgroundColor:
+                                cores[nota as keyof typeof cores] + "20",
+                            },
                           ]}
                           onPress={() =>
-                            setSelectAnswers((prev) => ({
+                            setNotaAnswers((prev) => ({
                               ...prev,
-                              [pergunta.id]: opcao,
+                              [perguntaAtual.pergunta.id]: isSelected
+                                ? null
+                                : nota,
                             }))
                           }
                         >
+                          <View
+                            style={[
+                              styles.avaliacaoDot,
+                              {
+                                backgroundColor:
+                                  cores[nota as keyof typeof cores],
+                              },
+                            ]}
+                          />
                           <Text
                             style={[
-                              styles.selectButtonText,
-                              selectAnswers[pergunta.id] === opcao
-                                ? styles.selectButtonTextSelected
-                                : null,
+                              styles.avaliacaoButtonText,
+                              isSelected && styles.avaliacaoButtonTextSelected,
                             ]}
                           >
-                            {opcao}
+                            {nota} - {labels[nota as keyof typeof labels]}
                           </Text>
                         </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-
-                  {/* Sistema de Avaliação 1-5 - Mostrar em TODAS as perguntas */}
-                  <View style={styles.avaliacaoContainer}>
-                    <Text style={styles.avaliacaoLabel}>
-                      Avaliação {pergunta.peso ? `(Peso ${pergunta.peso})` : ""}
-                    </Text>
-                    <Text style={styles.avaliacaoSubtitle}>
-                      Selecione a nota que melhor representa a situação
-                    </Text>
-                    <View style={styles.avaliacaoButtons}>
-                      {[1, 2, 3, 4, 5].map((nota) => {
-                        const cores = {
-                          1: "#f44336", // Vermelho - Péssimo
-                          2: "#FF9800", // Laranja - Ruim
-                          3: "#FFC107", // Amarelo - Regular
-                          4: "#4CAF50", // Verde - Bom
-                          5: "#8BC34A", // Verde claro - Ótimo
-                        };
-                        const labels = {
-                          1: "Péssimo",
-                          2: "Ruim",
-                          3: "Regular",
-                          4: "Bom",
-                          5: "Ótimo",
-                        };
-                        const isSelected = notaAnswers[pergunta.id] === nota;
-                        return (
-                          <TouchableOpacity
-                            key={nota}
-                            style={[
-                              styles.avaliacaoButton,
-                              isSelected && styles.avaliacaoButtonSelected,
-                              {
-                                borderColor: cores[nota as keyof typeof cores],
-                              },
-                              isSelected && {
-                                backgroundColor:
-                                  cores[nota as keyof typeof cores] + "20",
-                              },
-                            ]}
-                            onPress={() =>
-                              setNotaAnswers((prev) => ({
-                                ...prev,
-                                [pergunta.id]: isSelected ? null : nota,
-                              }))
-                            }
-                          >
-                            <View
-                              style={[
-                                styles.avaliacaoDot,
-                                {
-                                  backgroundColor:
-                                    cores[nota as keyof typeof cores],
-                                },
-                              ]}
-                            />
-                            <Text
-                              style={[
-                                styles.avaliacaoButtonText,
-                                isSelected &&
-                                  styles.avaliacaoButtonTextSelected,
-                              ]}
-                            >
-                              {nota} - {labels[nota as keyof typeof labels]}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                    {notaAnswers[pergunta.id] && (
-                      <Text style={styles.avaliacaoSelected}>
-                        Nota selecionada: {notaAnswers[pergunta.id]}
-                      </Text>
-                    )}
+                      );
+                    })}
                   </View>
-
-                  {/* Campo para anexar foto em perguntas que NÃO são do tipo FOTO */}
-                  {/* Se a pergunta já é do tipo FOTO, não mostrar o campo de anexo separado */}
-                  {/* Mostrar se permiteAnexarFoto for true OU undefined (padrão: permitir) */}
-                  {/* Só ocultar se for explicitamente false */}
-                  {pergunta.tipo !== "FOTO" && pergunta.permiteAnexarFoto !== false && (
-                    <View style={styles.anexoFotoContainer}>
-                      <Text style={styles.anexoFotoLabel}>
-                        Anexar foto (opcional)
-                      </Text>
-                      <Text style={styles.anexoFotoSubtitle}>
-                        Você pode anexar uma foto como evidência adicional para
-                        esta pergunta
-                      </Text>
-                      {photoAnswers[`${pergunta.id}_anexo`]?.map(
-                        (uri, index) => (
-                          <View key={index} style={styles.photoPreview}>
-                            <Image source={{ uri }} style={styles.photoImage} />
-                            <TouchableOpacity
-                              style={styles.removePhotoButton}
-                              onPress={() => {
-                                const novasFotos = [
-                                  ...(photoAnswers[`${pergunta.id}_anexo`] ||
-                                    []),
-                                ];
-                                novasFotos.splice(index, 1);
-                                setPhotoAnswers((prev) => {
-                                  const newState = { ...prev };
-                                  if (novasFotos.length > 0) {
-                                    newState[`${pergunta.id}_anexo`] =
-                                      novasFotos;
-                                  } else {
-                                    delete newState[`${pergunta.id}_anexo`];
-                                  }
-                                  return newState;
-                                });
-                              }}
-                            >
-                              <Ionicons
-                                name="close-circle"
-                                size={24}
-                                color="#f44336"
-                              />
-                            </TouchableOpacity>
-                          </View>
-                        )
-                      )}
-                      <View style={styles.photoButtons}>
-                        <TouchableOpacity
-                          style={styles.photoButton}
-                          onPress={() =>
-                            tirarFoto(`${pergunta.id}_anexo`, true)
-                          }
-                        >
-                          <Ionicons
-                            name="camera-outline"
-                            size={20}
-                            color="#009ee2"
-                          />
-                          <Text style={styles.photoButtonText}>Tirar Foto</Text>
-                        </TouchableOpacity>
-                      </View>
-                      {photoAnswers[`${pergunta.id}_anexo`]?.length > 0 && (
-                        <Text style={styles.photoCount}>
-                          {photoAnswers[`${pergunta.id}_anexo`].length} foto(s)
-                          adicionada(s)
-                        </Text>
-                      )}
-                    </View>
+                  {notaAnswers[perguntaAtual.pergunta.id] && (
+                    <Text style={styles.avaliacaoSelected}>
+                      Nota selecionada: {notaAnswers[perguntaAtual.pergunta.id]}
+                    </Text>
                   )}
+                </View>
 
-                  {pergunta.tipo === "FOTO" && (
-                    <View style={styles.photoContainer}>
-                      {photoAnswers[pergunta.id]?.map((uri, index) => (
+                {/* Anexe uma foto - em TODAS as perguntas (melhor para Android) */}
+                {perguntaAtual.pergunta.tipo !== "FOTO" && (
+                  <View style={styles.anexoFotoContainer}>
+                    <Text style={styles.anexoFotoLabel}>
+                      Anexe uma foto (opcional)
+                    </Text>
+                    <Text style={styles.anexoFotoSubtitle}>
+                      Tire ou selecione uma foto como evidência para esta
+                      pergunta
+                    </Text>
+                    {photoAnswers[`${perguntaAtual.pergunta.id}_anexo`]?.map(
+                      (uri, index) => (
                         <View key={index} style={styles.photoPreview}>
                           <Image source={{ uri }} style={styles.photoImage} />
                           <TouchableOpacity
                             style={styles.removePhotoButton}
                             onPress={() => {
                               const novasFotos = [
-                                ...(photoAnswers[pergunta.id] || []),
+                                ...(photoAnswers[
+                                  `${perguntaAtual.pergunta.id}_anexo`
+                                ] || []),
+                              ];
+                              novasFotos.splice(index, 1);
+                              setPhotoAnswers((prev) => {
+                                const newState = { ...prev };
+                                if (novasFotos.length > 0) {
+                                  newState[
+                                    `${perguntaAtual.pergunta.id}_anexo`
+                                  ] = novasFotos;
+                                } else {
+                                  delete newState[
+                                    `${perguntaAtual.pergunta.id}_anexo`
+                                  ];
+                                }
+                                return newState;
+                              });
+                            }}
+                          >
+                            <Ionicons
+                              name="close-circle"
+                              size={24}
+                              color="#f44336"
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      )
+                    )}
+                    <View style={styles.photoButtons}>
+                      <TouchableOpacity
+                        style={styles.photoButton}
+                        onPress={() =>
+                          tirarFoto(`${perguntaAtual.pergunta.id}_anexo`, true)
+                        }
+                      >
+                        <Ionicons
+                          name="camera-outline"
+                          size={20}
+                          color="#009ee2"
+                        />
+                        <Text style={styles.photoButtonText}>Tirar Foto</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {photoAnswers[`${perguntaAtual.pergunta.id}_anexo`]
+                      ?.length > 0 && (
+                      <Text style={styles.photoCount}>
+                        {
+                          photoAnswers[`${perguntaAtual.pergunta.id}_anexo`]
+                            .length
+                        }{" "}
+                        foto(s) adicionada(s)
+                      </Text>
+                    )}
+                  </View>
+                )}
+
+                {perguntaAtual.pergunta.tipo === "FOTO" && (
+                  <View style={styles.photoContainer}>
+                    {photoAnswers[perguntaAtual.pergunta.id]?.map(
+                      (uri, index) => (
+                        <View key={index} style={styles.photoPreview}>
+                          <Image source={{ uri }} style={styles.photoImage} />
+                          <TouchableOpacity
+                            style={styles.removePhotoButton}
+                            onPress={() => {
+                              const novasFotos = [
+                                ...(photoAnswers[perguntaAtual.pergunta.id] ||
+                                  []),
                               ];
                               novasFotos.splice(index, 1);
                               setPhotoAnswers((prev) => ({
                                 ...prev,
-                                [pergunta.id]: novasFotos,
+                                [perguntaAtual.pergunta.id]: novasFotos,
                               }));
                             }}
                           >
@@ -2260,148 +2728,168 @@ export default function ResponderChecklistScreen() {
                             />
                           </TouchableOpacity>
                         </View>
-                      ))}
-                      <View style={styles.photoButtons}>
-                        <TouchableOpacity
-                          style={styles.photoButton}
-                          onPress={() => tirarFoto(pergunta.id, true)}
-                        >
-                          <Ionicons
-                            name="camera-outline"
-                            size={20}
-                            color="#009ee2"
-                          />
-                          <Text style={styles.photoButtonText}>Tirar Foto</Text>
-                        </TouchableOpacity>
-                      </View>
-                      {photoAnswers[pergunta.id]?.length > 0 && (
-                        <Text style={styles.photoCount}>
-                          {photoAnswers[pergunta.id].length} foto(s)
-                          adicionada(s)
-                        </Text>
-                      )}
+                      )
+                    )}
+                    <View style={styles.photoButtons}>
+                      <TouchableOpacity
+                        style={styles.photoButton}
+                        onPress={() =>
+                          tirarFoto(perguntaAtual.pergunta.id, true)
+                        }
+                      >
+                        <Ionicons
+                          name="camera-outline"
+                          size={20}
+                          color="#009ee2"
+                        />
+                        <Text style={styles.photoButtonText}>Tirar Foto</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {photoAnswers[perguntaAtual.pergunta.id]?.length > 0 && (
+                      <Text style={styles.photoCount}>
+                        {photoAnswers[perguntaAtual.pergunta.id].length} foto(s)
+                        adicionada(s)
+                      </Text>
+                    )}
+                  </View>
+                )}
+
+                {/* Detalhes de não conformidade */}
+                {perguntaAtual.pergunta.tipo === "BOOLEANO" &&
+                  booleanAnswers[perguntaAtual.pergunta.id] ===
+                    "NAO_CONFORME" && (
+                    <View style={styles.naoConformeContainer}>
+                      <Text style={styles.naoConformeLabel}>
+                        Motivo da não conformidade:
+                      </Text>
+                      <TextInput
+                        style={styles.textInput}
+                        value={
+                          naoConformeDetails[perguntaAtual.pergunta.id]
+                            ?.motivo || ""
+                        }
+                        onChangeText={(text) =>
+                          setNaoConformeDetails((prev) => ({
+                            ...prev,
+                            [perguntaAtual.pergunta.id]: {
+                              motivo: text,
+                              resolucao:
+                                prev[perguntaAtual.pergunta.id]?.resolucao ||
+                                "",
+                            },
+                          }))
+                        }
+                        placeholder="Descreva o motivo..."
+                        multiline={true}
+                      />
+                      <Text style={styles.naoConformeLabel}>
+                        O que foi feito para resolver:
+                      </Text>
+                      <TextInput
+                        style={styles.textInput}
+                        value={
+                          naoConformeDetails[perguntaAtual.pergunta.id]
+                            ?.resolucao || ""
+                        }
+                        onChangeText={(text) =>
+                          setNaoConformeDetails((prev) => ({
+                            ...prev,
+                            [perguntaAtual.pergunta.id]: {
+                              motivo:
+                                prev[perguntaAtual.pergunta.id]?.motivo || "",
+                              resolucao: text,
+                            },
+                          }))
+                        }
+                        placeholder="Descreva a resolução..."
+                        multiline={true}
+                      />
                     </View>
                   )}
+              </View>
+            </View>
+          )
+        )}
 
-                  {/* Detalhes de não conformidade */}
-                  {pergunta.tipo === "BOOLEANO" &&
-                    booleanAnswers[pergunta.id] === "NAO_CONFORME" && (
-                      <View style={styles.naoConformeContainer}>
-                        <Text style={styles.naoConformeLabel}>
-                          Motivo da não conformidade:
-                        </Text>
-                        <TextInput
-                          style={styles.textInput}
-                          value={naoConformeDetails[pergunta.id]?.motivo || ""}
-                          onChangeText={(text) =>
-                            setNaoConformeDetails((prev) => ({
-                              ...prev,
-                              [pergunta.id]: {
-                                motivo: text,
-                                resolucao: prev[pergunta.id]?.resolucao || "",
-                              },
-                            }))
-                          }
-                          placeholder="Descreva o motivo..."
-                          multiline={true}
-                        />
-                        <Text style={styles.naoConformeLabel}>
-                          O que foi feito para resolver:
-                        </Text>
-                        <TextInput
-                          style={styles.textInput}
-                          value={
-                            naoConformeDetails[pergunta.id]?.resolucao || ""
-                          }
-                          onChangeText={(text) =>
-                            setNaoConformeDetails((prev) => ({
-                              ...prev,
-                              [pergunta.id]: {
-                                motivo: prev[pergunta.id]?.motivo || "",
-                                resolucao: text,
-                              },
-                            }))
-                          }
-                          placeholder="Descreva a resolução..."
-                          multiline={true}
-                        />
-                      </View>
-                    )}
-                </View>
-              ))}
+        {/* Observações Gerais - só na última pergunta */}
+        {isUltimaPergunta && (
+          <View style={styles.observacoesContainer}>
+            <Text style={styles.observacoesLabel}>
+              Observações Gerais (opcional)
+            </Text>
+            <TextInput
+              style={[styles.textInput, styles.observacoesInput]}
+              value={observacoes}
+              onChangeText={setObservacoes}
+              placeholder="Adicione observações gerais sobre este checklist..."
+              multiline={true}
+              numberOfLines={6}
+            />
           </View>
-        ))}
-
-        {/* Observações Gerais */}
-        <View style={styles.observacoesContainer}>
-          <Text style={styles.observacoesLabel}>
-            Observações Gerais (opcional)
-          </Text>
-          <TextInput
-            style={[styles.textInput, styles.observacoesInput]}
-            value={observacoes}
-            onChangeText={setObservacoes}
-            placeholder="Adicione observações gerais sobre este checklist..."
-            multiline={true}
-            numberOfLines={6}
-          />
-        </View>
+        )}
       </ScrollView>
 
-      {/* Footer com botões */}
-      <View
-        style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}
-      >
-        <TouchableOpacity
-          style={[styles.footerButton, styles.saveButton]}
-          onPress={async () => {
-            // Limpar timeout do auto-save para salvar imediatamente
-            if (autoSaveTimeoutRef.current) {
-              clearTimeout(autoSaveTimeoutRef.current);
-            }
-            await salvarRascunho(true);
-          }}
-          disabled={salvandoRascunho}
+      {/* Footer com navegação pergunta por pergunta */}
+      {totalPerguntas > 0 && (
+        <View
+          style={[
+            styles.footer,
+            styles.footerStepByStep,
+            { paddingBottom: Math.max(insets.bottom, 16) },
+          ]}
         >
-          {salvandoRascunho ? (
-            <>
-              <ActivityIndicator color="#009ee2" size="small" />
-              <Text
-                style={[
-                  styles.footerButtonText,
-                  styles.saveButtonText,
-                  { marginLeft: 8 },
-                ]}
-              >
-                Salvando...
-              </Text>
-            </>
+          <TouchableOpacity
+            style={[styles.footerButton, styles.navButton]}
+            onPress={voltarPergunta}
+            disabled={currentQuestionIndex === 0}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={20}
+              color={currentQuestionIndex === 0 ? "#999" : "#009ee2"}
+            />
+            <Text
+              style={[
+                styles.footerButtonText,
+                { color: currentQuestionIndex === 0 ? "#999" : "#009ee2" },
+              ]}
+            >
+              Anterior
+            </Text>
+          </TouchableOpacity>
+
+          {isUltimaPergunta ? (
+            <TouchableOpacity
+              style={[styles.footerButton, styles.submitButton]}
+              onPress={finalizarChecklist}
+              disabled={enviando}
+            >
+              {enviando ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                  <Text
+                    style={[styles.footerButtonText, styles.submitButtonText]}
+                  >
+                    Finalizar
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
           ) : (
-            <>
-              <Ionicons name="save-outline" size={20} color="#009ee2" />
-              <Text style={[styles.footerButtonText, styles.saveButtonText]}>
-                Salvar Rascunho
+            <TouchableOpacity
+              style={[styles.footerButton, styles.navButton]}
+              onPress={avancarPergunta}
+            >
+              <Text style={[styles.footerButtonText, { color: "#009ee2" }]}>
+                Próxima
               </Text>
-            </>
+              <Ionicons name="chevron-forward" size={20} color="#009ee2" />
+            </TouchableOpacity>
           )}
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.footerButton, styles.submitButton]}
-          onPress={finalizarChecklist}
-          disabled={enviando}
-        >
-          {enviando ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="checkmark-circle" size={20} color="#fff" />
-              <Text style={[styles.footerButtonText, styles.submitButtonText]}>
-                Finalizar
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
+        </View>
+      )}
 
       {/* Modal de Assinaturas */}
       <Modal
@@ -2579,6 +3067,22 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 16,
     color: "#666",
+  },
+  emptyContainer: {
+    padding: 24,
+    alignItems: "center",
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  emptyText: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
   },
   header: {
     flexDirection: "row",
@@ -2943,21 +3447,21 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginRight: 12,
   },
-  saveButton: {
-    borderWidth: 2,
-    borderColor: "#009ee2",
-    backgroundColor: "#fff",
-  },
-  saveButtonText: {
-    color: "#009ee2",
-    fontWeight: "600",
-  },
   submitButton: {
     backgroundColor: "#009ee2",
   },
   submitButtonText: {
     color: "#fff",
     fontWeight: "600",
+  },
+  footerStepByStep: {
+    gap: 8,
+  },
+  navButton: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: "#009ee2",
+    backgroundColor: "#fff",
   },
   footerButtonText: {
     fontSize: 16,

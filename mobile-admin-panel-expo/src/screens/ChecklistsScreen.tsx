@@ -11,82 +11,69 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
+import * as NetInfo from "@react-native-community/netinfo";
 import {
-  obterChecklistsPendentes,
-  obterChecklistsEmAberto,
   obterChecklistsRespondidos,
-  ChecklistEscopo,
+  obterChecklistsEmAberto,
+  obterChecklistsPendentes,
 } from "../services/api";
-import { normalizeBoolean } from "../utils/booleanUtils";
+import { getLocalDraftEscopoIds, getEscopoCache } from "../services/offlineSync";
 
 export default function ChecklistsScreen() {
   const navigation = useNavigation();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [escopos, setEscopos] = useState<ChecklistEscopo[]>([]);
-  const [rascunhos, setRascunhos] = useState<any[]>([]);
   const [respondidos, setRespondidos] = useState<any[]>([]);
-  const [tabAtiva, setTabAtiva] = useState<"pendentes" | "rascunhos" | "respondidos">("pendentes");
+  const [rascunhos, setRascunhos] = useState<any[]>([]);
+  const [escopos, setEscopos] = useState<any[]>([]);
+  const [localDrafts, setLocalDrafts] = useState<{ escopoId: string; titulo?: string; unidade?: string }[]>([]);
+  const [isOffline, setIsOffline] = useState(false);
 
   useEffect(() => {
     carregarChecklists();
   }, []);
 
-  // Recarregar quando a tab mudar
-  useEffect(() => {
-    if (tabAtiva === "respondidos" && respondidos.length === 0) {
-      // Carregar respondidos quando a tab for ativada pela primeira vez
-      const carregarRespondidos = async () => {
-        try {
-          const responseRespondidos = await obterChecklistsRespondidos();
-          if (responseRespondidos.respostas) {
-            setRespondidos(responseRespondidos.respostas);
-          }
-        } catch (error) {
-          console.error("Erro ao carregar checklists respondidos:", error);
-        }
-      };
-      carregarRespondidos();
-    }
-  }, [tabAtiva]);
-
-
   const carregarChecklists = async () => {
     try {
       setLoading(true);
-      
-      // Carregar checklists pendentes
-      const responsePendentes = await obterChecklistsPendentes();
-      if (responsePendentes.escopos) {
-        // Normalizar valores boolean que podem vir como strings da API
-        const escoposNormalizados = responsePendentes.escopos.map((escopo: any) => ({
-          ...escopo,
-          ativo: normalizeBoolean(escopo.ativo),
-        }));
-        setEscopos(escoposNormalizados);
-      }
+      const netStatus = await NetInfo.fetch();
+      const offline = !netStatus.isConnected;
+      setIsOffline(offline);
 
-      // Carregar rascunhos em aberto
-      try {
-        const responseRascunhos = await obterChecklistsEmAberto();
-        if (responseRascunhos.respostas) {
-          setRascunhos(responseRascunhos.respostas);
+      if (offline) {
+        // Offline: carregar rascunhos locais
+        const escopoIds = await getLocalDraftEscopoIds();
+        const drafts: { escopoId: string; titulo?: string; unidade?: string }[] = [];
+        for (const escopoId of escopoIds) {
+          const cached = await getEscopoCache(escopoId);
+          drafts.push({
+            escopoId,
+            titulo: cached?.escopo?.template?.titulo || "Rascunho",
+            unidade: cached?.escopo?.unidade?.nome,
+          });
         }
-      } catch (error) {
-        console.error("Erro ao carregar rascunhos:", error);
-        // Não bloquear se falhar ao carregar rascunhos
-      }
-
-      // Carregar checklists respondidos se a tab estiver ativa
-      if (tabAtiva === "respondidos") {
+        setLocalDrafts(drafts);
+        setRespondidos([]);
+      } else {
+        // Online: carregar escopos, rascunhos e respondidos
+        setLocalDrafts([]);
         try {
-          const responseRespondidos = await obterChecklistsRespondidos();
+          const [responsePendentes, responseRascunhos, responseRespondidos] = await Promise.all([
+            obterChecklistsPendentes(),
+            obterChecklistsEmAberto(),
+            obterChecklistsRespondidos(),
+          ]);
+          if (responsePendentes.escopos) {
+            setEscopos(responsePendentes.escopos);
+          }
+          if (responseRascunhos.respostas) {
+            setRascunhos(responseRascunhos.respostas);
+          }
           if (responseRespondidos.respostas) {
             setRespondidos(responseRespondidos.respostas);
           }
         } catch (error) {
-          console.error("Erro ao carregar checklists respondidos:", error);
-          // Não bloquear se falhar ao carregar respondidos
+          console.error("Erro ao carregar checklists:", error);
         }
       }
     } catch (error: any) {
@@ -119,50 +106,6 @@ export default function ChecklistsScreen() {
     }
   };
 
-  const getStatusBadge = (escopo: ChecklistEscopo) => {
-    if (escopo.ultimoEnvioEm) {
-      const ultimoEnvio = new Date(escopo.ultimoEnvioEm);
-      const agora = new Date();
-      const diffMs = agora.getTime() - ultimoEnvio.getTime();
-      const diffDays = diffMs / (1000 * 60 * 60 * 24);
-
-      if (diffDays < 1) {
-        return { text: "Enviado hoje", color: "#4CAF50" };
-      } else if (diffDays < 7) {
-        return { text: `Enviado há ${Math.floor(diffDays)} dias`, color: "#FF9800" };
-      } else {
-        return { text: `Enviado há ${Math.floor(diffDays)} dias`, color: "#f44336" };
-      }
-    }
-    return { text: "Pendente", color: "#f44336" };
-  };
-
-  const handleEscopoPress = async (escopo: ChecklistEscopo) => {
-    if (!normalizeBoolean(escopo.ativo)) {
-      Alert.alert("Checklist Inativo", "Este checklist está inativo.");
-      return;
-    }
-
-    try {
-      // Navegar para a tela de responder checklist
-      navigation.navigate("ResponderChecklist" as never, { escopoId: escopo.id } as never);
-    } catch (error: any) {
-      console.error("Erro ao abrir checklist:", error);
-      Alert.alert("Erro", "Não foi possível abrir o checklist.");
-    }
-  };
-
-  const escoposOrdenados = [...escopos].sort((a, b) => {
-    // Prioridade: pendentes primeiro, depois por data de envio (mais antigos primeiro)
-    if (!a.ultimoEnvioEm && b.ultimoEnvioEm) return -1;
-    if (a.ultimoEnvioEm && !b.ultimoEnvioEm) return 1;
-    if (!a.ultimoEnvioEm && !b.ultimoEnvioEm) return 0;
-    
-    const dataA = new Date(a.ultimoEnvioEm!).getTime();
-    const dataB = new Date(b.ultimoEnvioEm!).getTime();
-    return dataA - dataB;
-  });
-
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -176,61 +119,16 @@ export default function ChecklistsScreen() {
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Checklists</Text>
           <Text style={styles.headerSubtitle}>
-            {tabAtiva === "pendentes"
-              ? `${escopos.length} pendente${escopos.length !== 1 ? "s" : ""}`
-              : tabAtiva === "rascunhos"
-              ? `${rascunhos.length} rascunho${rascunhos.length !== 1 ? "s" : ""}`
-              : `${respondidos.length} respondido${respondidos.length !== 1 ? "s" : ""}`}
+            {!isOffline && rascunhos.length > 0
+              ? `${rascunhos.length} em andamento • ${respondidos.length} concluído${respondidos.length !== 1 ? "s" : ""}`
+              : `${respondidos.length} concluído${respondidos.length !== 1 ? "s" : ""}`}
           </Text>
         </View>
         <TouchableOpacity
           onPress={() => navigation.navigate("NovoChecklist" as never)}
           style={styles.newButton}
         >
-          <Ionicons name="add-circle" size={24} color="#fff" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Tabs */}
-      <View style={styles.tabsContainer}>
-        <TouchableOpacity
-          style={[styles.tab, tabAtiva === "pendentes" ? styles.tabAtiva : null]}
-          onPress={() => setTabAtiva("pendentes")}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              tabAtiva === "pendentes" ? styles.tabTextAtiva : null,
-            ]}
-          >
-            Pendentes ({escopos.length})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, tabAtiva === "rascunhos" ? styles.tabAtiva : null]}
-          onPress={() => setTabAtiva("rascunhos")}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              tabAtiva === "rascunhos" ? styles.tabTextAtiva : null,
-            ]}
-          >
-            Rascunhos ({rascunhos.length})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, tabAtiva === "respondidos" ? styles.tabAtiva : null]}
-          onPress={() => setTabAtiva("respondidos")}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              tabAtiva === "respondidos" ? styles.tabTextAtiva : null,
-            ]}
-          >
-            Respondidos ({respondidos.length})
-          </Text>
+          <Ionicons name="add-circle" size={28} color="#fff" />
         </TouchableOpacity>
       </View>
 
@@ -247,125 +145,42 @@ export default function ChecklistsScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
         >
-          {tabAtiva === "pendentes" ? (
-            escoposOrdenados.length === 0 ? (
-              <View style={styles.emptyContainer}>
-                <Ionicons name="checkmark-circle-outline" size={64} color="#ccc" />
-                <Text style={styles.emptyTitle}>Nenhum checklist pendente</Text>
-                <Text style={styles.emptyText}>
-                  Todos os checklists foram enviados ou não há checklists disponíveis.
-                </Text>
-              </View>
-            ) : (
-              escoposOrdenados.map((escopo) => {
-              const status = getStatusBadge(escopo);
-              return (
-                <TouchableOpacity
-                  key={escopo.id}
-                  style={[
-                    styles.card,
-                    !normalizeBoolean(escopo.ativo) ? styles.cardInativo : null,
-                  ]}
-                  onPress={() => handleEscopoPress(escopo)}
-                  disabled={!normalizeBoolean(escopo.ativo)}
-                >
-                  <View style={styles.cardHeader}>
-                    <View style={styles.cardHeaderLeft}>
-                      <Ionicons
-                        name={
-                          normalizeBoolean(escopo.ativo)
-                            ? "checkmark-circle"
-                            : "close-circle-outline"
-                        }
-                        size={24}
-                        color={normalizeBoolean(escopo.ativo) ? "#009ee2" : "#999"}
-                      />
-                      <View style={styles.cardTitleContainer}>
-                        <Text style={styles.cardTitle} numberOfLines={2}>
-                          {escopo.template.titulo}
-                        </Text>
-                        {escopo.template.descricao && (
-                          <Text style={styles.cardDescription} numberOfLines={1}>
-                            {escopo.template.descricao}
-                          </Text>
-                        )}
-                      </View>
-                    </View>
-                    <View
-                      style={[styles.statusBadge, { backgroundColor: status.color + "20" }]}
-                    >
-                      <Text style={[styles.statusText, { color: status.color }]}>
-                        {status.text}
-                      </Text>
-                    </View>
-                  </View>
+          {/* Botão Iniciar Checklist - online apenas */}
+          <TouchableOpacity
+            style={[styles.iniciarButton, isOffline && styles.iniciarButtonDisabled]}
+            onPress={() => {
+              if (isOffline) {
+                Alert.alert("Offline", "Conecte-se à internet para iniciar um novo checklist.");
+              } else {
+                navigation.navigate("NovoChecklist" as never);
+              }
+            }}
+          >
+            <Ionicons name="add-circle" size={24} color="#fff" />
+            <Text style={styles.iniciarButtonText}>
+              {isOffline ? "Iniciar Checklist (requer internet)" : "Iniciar Checklist"}
+            </Text>
+          </TouchableOpacity>
 
-                  <View style={styles.cardBody}>
-                    <View style={styles.infoRow}>
-                      <Ionicons name="business-outline" size={16} color="#666" />
-                      <Text style={styles.infoText}>
-                        {escopo.unidade?.nome || "Sem unidade"}
-                      </Text>
-                    </View>
-                    {escopo.grupo && (
-                      <View style={styles.infoRow}>
-                        <Ionicons name="people-outline" size={16} color="#666" />
-                        <Text style={styles.infoText}>{escopo.grupo.nome}</Text>
-                      </View>
-                    )}
-                    <View style={styles.infoRow}>
-                      <Ionicons name="time-outline" size={16} color="#666" />
-                      <Text style={styles.infoText}>
-                        Último envio: {formatarData(escopo.ultimoEnvioEm)}
-                      </Text>
-                    </View>
-                    {escopo.respostasRecentes && escopo.respostasRecentes.length > 0 && (
-                      <View style={styles.infoRow}>
-                        <Ionicons name="document-text-outline" size={16} color="#666" />
-                        <Text style={styles.infoText}>
-                          {escopo.respostasRecentes.length} resposta{escopo.respostasRecentes.length !== 1 ? "s" : ""} recente{escopo.respostasRecentes.length !== 1 ? "s" : ""}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  <View style={styles.cardFooter}>
-                    <Text style={styles.cardActionText}>
-                      {normalizeBoolean(escopo.ativo) ? "Toque para responder" : "Checklist inativo"}
-                    </Text>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={20}
-                      color={normalizeBoolean(escopo.ativo) ? "#009ee2" : "#999"}
-                    />
-                  </View>
-                </TouchableOpacity>
-              );
-            })
-            )
-          ) : tabAtiva === "rascunhos" ? (
-            // Tab de Rascunhos
-            rascunhos.length === 0 ? (
-              <View style={styles.emptyContainer}>
-                <Ionicons name="document-text-outline" size={64} color="#ccc" />
-                <Text style={styles.emptyTitle}>Nenhum rascunho</Text>
-                <Text style={styles.emptyText}>
-                  Você não tem checklists em rascunho. Inicie um checklist para criar um rascunho.
-                </Text>
-              </View>
-            ) : (
-              rascunhos.map((rascunho) => {
+          {/* Rascunhos em andamento - quando online */}
+          {!isOffline && rascunhos.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Em andamento ({rascunhos.length})</Text>
+              {rascunhos.map((rascunho) => {
                 const escopoCorrespondente = escopos.find(
-                  (e) => e.template.id === rascunho.template.id && e.unidade?.id === rascunho.unidade.id
+                  (e: any) =>
+                    e.template?.id === rascunho.template?.id &&
+                    e.unidade?.id === rascunho.unidade?.id
                 );
-
                 return (
                   <TouchableOpacity
                     key={rascunho.id}
                     style={styles.card}
                     onPress={() =>
                       escopoCorrespondente
-                        ? navigation.navigate("ResponderChecklist" as never, { escopoId: escopoCorrespondente.id } as never)
+                        ? navigation.navigate("ResponderChecklist" as never, {
+                            escopoId: escopoCorrespondente.id,
+                          } as never)
                         : Alert.alert("Erro", "Escopo não encontrado para este rascunho.")
                     }
                   >
@@ -374,7 +189,7 @@ export default function ChecklistsScreen() {
                         <Ionicons name="document-text" size={24} color="#FF9800" />
                         <View style={styles.cardTitleContainer}>
                           <Text style={styles.cardTitle} numberOfLines={2}>
-                            {rascunho.template.titulo}
+                            {rascunho.template?.titulo || "Rascunho"}
                           </Text>
                         </View>
                       </View>
@@ -382,11 +197,10 @@ export default function ChecklistsScreen() {
                         <Text style={[styles.statusText, { color: "#FF9800" }]}>Rascunho</Text>
                       </View>
                     </View>
-
                     <View style={styles.cardBody}>
                       <View style={styles.infoRow}>
                         <Ionicons name="business-outline" size={16} color="#666" />
-                        <Text style={styles.infoText}>{rascunho.unidade.nome}</Text>
+                        <Text style={styles.infoText}>{rascunho.unidade?.nome}</Text>
                       </View>
                       {rascunho.grupo && (
                         <View style={styles.infoRow}>
@@ -401,27 +215,72 @@ export default function ChecklistsScreen() {
                         </Text>
                       </View>
                     </View>
-
                     <View style={styles.cardFooter}>
                       <Text style={styles.cardActionText}>Toque para continuar</Text>
                       <Ionicons name="chevron-forward" size={20} color="#009ee2" />
                     </View>
                   </TouchableOpacity>
                 );
-              })
-            )
+              })}
+            </>
+          )}
+
+          {/* Rascunhos locais - quando offline */}
+          {isOffline && localDrafts.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Rascunhos locais (offline)</Text>
+              {localDrafts.map((draft) => (
+                <TouchableOpacity
+                  key={draft.escopoId}
+                  style={styles.card}
+                  onPress={() =>
+                    navigation.navigate("ResponderChecklist" as never, { escopoId: draft.escopoId } as never)
+                  }
+                >
+                  <View style={styles.cardHeader}>
+                    <View style={styles.cardHeaderLeft}>
+                      <Ionicons name="document-text" size={24} color="#FF9800" />
+                      <View style={styles.cardTitleContainer}>
+                        <Text style={styles.cardTitle} numberOfLines={2}>
+                          {draft.titulo || "Rascunho"}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={[styles.statusBadge, { backgroundColor: "#FF980020" }]}>
+                      <Text style={[styles.statusText, { color: "#FF9800" }]}>Offline</Text>
+                    </View>
+                  </View>
+                  {draft.unidade && (
+                    <View style={styles.cardBody}>
+                      <View style={styles.infoRow}>
+                        <Ionicons name="business-outline" size={16} color="#666" />
+                        <Text style={styles.infoText}>{draft.unidade}</Text>
+                      </View>
+                    </View>
+                  )}
+                  <View style={styles.cardFooter}>
+                    <Text style={styles.cardActionText}>Toque para continuar</Text>
+                    <Ionicons name="chevron-forward" size={20} color="#009ee2" />
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </>
+          )}
+
+          <Text style={styles.sectionTitle}>
+            {isOffline ? "Checklists Concluídos (carregar quando online)" : "Checklists Concluídos"}
+          </Text>
+
+          {respondidos.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="checkmark-done-circle-outline" size={64} color="#ccc" />
+              <Text style={styles.emptyTitle}>Nenhum checklist concluído</Text>
+              <Text style={styles.emptyText}>
+                Toque em "Iniciar Checklist" acima para começar. Você escolherá a loja, unidade e responderá pergunta por pergunta.
+              </Text>
+            </View>
           ) : (
-            // Tab de Respondidos
-            respondidos.length === 0 ? (
-              <View style={styles.emptyContainer}>
-                <Ionicons name="checkmark-done-circle-outline" size={64} color="#ccc" />
-                <Text style={styles.emptyTitle}>Nenhum checklist respondido</Text>
-                <Text style={styles.emptyText}>
-                  Você ainda não tem checklists concluídos.
-                </Text>
-              </View>
-            ) : (
-              respondidos.map((respondido) => {
+            respondidos.map((respondido) => {
                 const confirmacoesEnviadas = respondido.confirmacoes?.length || 0;
                 const confirmacoesRecebidas = respondido.confirmacoes?.filter((c: any) => c.confirmado).length || 0;
 
@@ -494,7 +353,6 @@ export default function ChecklistsScreen() {
                   </TouchableOpacity>
                 );
               })
-            )
           )}
         </ScrollView>
       )}
@@ -589,6 +447,38 @@ const styles = StyleSheet.create({
     color: "#666",
     textAlign: "center",
     lineHeight: 20,
+  },
+  iniciarButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#009ee2",
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    marginTop: 8,
+    marginBottom: 8,
+    gap: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  iniciarButtonText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  iniciarButtonDisabled: {
+    opacity: 0.8,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+    marginTop: 24,
+    marginBottom: 12,
   },
   tabsContainer: {
     flexDirection: "row",

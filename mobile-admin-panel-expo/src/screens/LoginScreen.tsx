@@ -19,6 +19,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { authByEmailPassword, User, setAuthToken, forgotPassword } from "../services/api";
 import * as SecureStore from "expo-secure-store";
 
+const SAVED_EMAIL_KEY = "lastEmail";
+const SAVED_PASSWORD_KEY = "savedPassword";
+const REMEMBER_PASSWORD_KEY = "rememberPassword";
+
 interface LoginScreenProps {
   onLoginSuccess: (user: User) => void;
 }
@@ -51,18 +55,26 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
       }),
     ]).start();
 
-    // Carregar email salvo se existir
-    const loadSavedEmail = async () => {
+    // Carregar email, senha e preferência "salvar senha" do cache
+    const loadSavedCredentials = async () => {
       try {
-        const savedEmail = await SecureStore.getItemAsync("lastEmail");
-        if (savedEmail) {
-          setEmail(savedEmail);
+        const [savedEmail, savedPassword, rememberPref] = await Promise.all([
+          SecureStore.getItemAsync(SAVED_EMAIL_KEY),
+          SecureStore.getItemAsync(SAVED_PASSWORD_KEY),
+          SecureStore.getItemAsync(REMEMBER_PASSWORD_KEY),
+        ]);
+        if (savedEmail) setEmail(savedEmail);
+        if (savedPassword && rememberPref === "true") {
+          setPassword(savedPassword);
+          setRememberPassword(true);
+        } else {
+          setRememberPassword(rememberPref !== "false");
         }
       } catch (error) {
-        console.error("Erro ao carregar email salvo:", error);
+        console.error("Erro ao carregar credenciais salvas:", error);
       }
     };
-    loadSavedEmail();
+    loadSavedCredentials();
   }, []);
 
   const handleLogin = async () => {
@@ -82,12 +94,21 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
       if (response.success && response.user && response.token) {
         // Salvar email e token localmente
-        await SecureStore.setItemAsync("lastEmail", email.trim());
+        await SecureStore.setItemAsync(SAVED_EMAIL_KEY, email.trim());
         await SecureStore.setItemAsync("authToken", response.token);
-        
+
+        // Salvar senha no cache se "Salvar senha" estiver marcado
+        if (rememberPassword) {
+          await SecureStore.setItemAsync(SAVED_PASSWORD_KEY, password);
+          await SecureStore.setItemAsync(REMEMBER_PASSWORD_KEY, "true");
+        } else {
+          await SecureStore.deleteItemAsync(SAVED_PASSWORD_KEY);
+          await SecureStore.setItemAsync(REMEMBER_PASSWORD_KEY, "false");
+        }
+
         // Configurar token no axios para as próximas requisições
         setAuthToken(response.token);
-        
+
         onLoginSuccess(response.user);
         // Navegar para Dashboard após login bem-sucedido
         navigation.navigate("Dashboard" as never);
@@ -235,7 +256,17 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
               <View style={styles.rememberRow}>
                 <TouchableOpacity
                   style={styles.rememberContainer}
-                  onPress={() => setRememberPassword(!rememberPassword)}
+                  onPress={async () => {
+                    const newVal = !rememberPassword;
+                    setRememberPassword(newVal);
+                    // Persistir preferência e limpar senha salva se desmarcar
+                    try {
+                      await SecureStore.setItemAsync(REMEMBER_PASSWORD_KEY, newVal ? "true" : "false");
+                      if (!newVal) await SecureStore.deleteItemAsync(SAVED_PASSWORD_KEY);
+                    } catch (e) {
+                      console.error("Erro ao salvar preferência:", e);
+                    }
+                  }}
                   activeOpacity={0.7}
                 >
                   <View
