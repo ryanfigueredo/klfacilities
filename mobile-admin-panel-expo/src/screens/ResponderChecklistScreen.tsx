@@ -90,6 +90,14 @@ interface Resposta {
   fotoUrl?: string;
 }
 
+/** Extrai mensagem de erro de forma segura (evita [object Object]) */
+function getErrorMessage(err: unknown, fallback: string): string {
+  if (typeof err === "string") return err;
+  const msg = (err as any)?.message;
+  if (typeof msg === "string") return msg;
+  return fallback;
+}
+
 export default function ResponderChecklistScreen() {
   const navigation = useNavigation();
   const route = useRoute();
@@ -2252,24 +2260,31 @@ export default function ResponderChecklistScreen() {
       console.error("Erro ao finalizar checklist:", error);
 
       // Não fechar o modal em caso de erro - deixar o usuário tentar novamente
+      const rawMsg = getErrorMessage(
+        error,
+        "Não foi possível finalizar o checklist."
+      );
       let errorMessage = "Não foi possível finalizar o checklist.";
 
-      if (error?.message) {
-        errorMessage = error.message;
+      // Erros de rede: mensagem amigável
+      if (
+        error?.code === "NETWORK_ERROR" ||
+        rawMsg?.toLowerCase?.().includes("network") ||
+        rawMsg?.toLowerCase?.().includes("failed to fetch") ||
+        rawMsg?.toLowerCase?.().includes("request failed")
+      ) {
+        errorMessage =
+          "Erro de conexão. Verifique sua internet e tente novamente.";
       } else if (error?.response?.status === 413) {
         errorMessage =
           "O checklist é muito grande. Tente reduzir o número de fotos.";
       } else if (error?.response?.status === 401) {
         errorMessage = "Sessão expirada. Faça login novamente.";
-      } else if (
-        error?.code === "NETWORK_ERROR" ||
-        error?.message?.includes("Network")
-      ) {
-        errorMessage =
-          "Erro de conexão. Verifique sua internet e tente novamente.";
+      } else if (typeof rawMsg === "string" && rawMsg.trim()) {
+        errorMessage = rawMsg;
       }
 
-      Alert.alert("Erro", errorMessage);
+      Alert.alert("Erro", String(errorMessage));
     } finally {
       setEnviando(false);
     }

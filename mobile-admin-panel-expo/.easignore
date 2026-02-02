@@ -1,0 +1,7 @@
+# Reduz tamanho do upload para EAS Build
+README.md
+*.log
+.DS_Store
+__tests__
+*.test.*
+*.spec.*
