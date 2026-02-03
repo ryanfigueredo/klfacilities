@@ -49,6 +49,7 @@ type AnswerPayload = {
   valorNumero?: number | string | null;
   valorOpcao?: string | null;
   nota?: number | null;
+  fotoUrl?: string | null;
 };
 
 export async function GET(request: NextRequest) {
@@ -507,15 +508,7 @@ export async function POST(request: NextRequest) {
             if (urlsFromPayload) {
               fotos = urlsFromPayload;
             } else {
-              if (pergunta.obrigatoria && !isDraft) {
-                return NextResponse.json(
-                  {
-                    error: 'validation_error',
-                    message: `Envie pelo menos uma foto para "${pergunta.titulo}".`,
-                  },
-                  { status: 422 }
-                );
-              }
+              // Sem fotos: não exige (supervisor sabe que deve enviar; quando tiver, envia certinho)
               break;
             }
           }
@@ -552,15 +545,7 @@ export async function POST(request: NextRequest) {
             if (urlsFromPayload && urlsFromPayload.length > 0) {
               photoUrl = urlsFromPayload[0];
             } else {
-              if (pergunta.obrigatoria && !isDraft) {
-                return NextResponse.json(
-                  {
-                    error: 'validation_error',
-                    message: `Envie a foto para "${pergunta.titulo}".`,
-                  },
-                  { status: 422 }
-                );
-              }
+              // Sem foto: não exige (supervisor sabe que deve enviar; quando tiver, envia certinho)
               break;
             }
           }
