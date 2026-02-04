@@ -233,10 +233,15 @@ export async function authByEmailPassword(
 /**
  * Solicitar reset de senha
  */
-export async function forgotPassword(email: string): Promise<{ message: string }> {
-  const response = await api.post<{ message: string }>(API_ENDPOINTS.FORGOT_PASSWORD, {
-    email: email.toLowerCase().trim(),
-  });
+export async function forgotPassword(
+  email: string
+): Promise<{ message: string }> {
+  const response = await api.post<{ message: string }>(
+    API_ENDPOINTS.FORGOT_PASSWORD,
+    {
+      email: email.toLowerCase().trim(),
+    }
+  );
 
   return response.data;
 }
@@ -433,7 +438,8 @@ export async function obterChecklistRespondidoDetalhes(
 }
 
 /**
- * Buscar opções para criar novo checklist (grupos, unidades, templates)
+ * Buscar opções para criar novo checklist (grupos, unidades, templates).
+ * Quando o backend envia allowedUnidadeIds (supervisor), o app usa só essas unidades.
  */
 export async function obterChecklistsOptions(): Promise<{
   grupos: Array<{
@@ -461,7 +467,9 @@ export async function obterChecklistsOptions(): Promise<{
       ativo: boolean;
     }>;
   }>;
+  allowedUnidadeIds?: string[];
 }> {
+  await initializeAuth();
   const response = await api.get(API_ENDPOINTS.CHECKLISTS_OPTIONS);
   return response.data;
 }
@@ -608,7 +616,7 @@ export async function initializeAuth() {
       console.error("Erro ao carregar token:", error);
       console.error("Platform:", Platform.OS);
     }
-    
+
     // Em iOS, ignorar erro do Keychain e continuar (usuário fará login)
     // Em Android, também ignorar para não quebrar o app
     // O erro mais comum é Keychain não disponível no primeiro launch
@@ -634,14 +642,19 @@ export async function obterUsuarioAtual(): Promise<User | null> {
       }
       return null;
     }
-    
+
     if (!token) {
       return null;
     }
-    
+
     setAuthToken(token);
-    const response = await api.get<{ id: string; name: string; email: string; role: string }>(API_ENDPOINTS.ME);
-    
+    const response = await api.get<{
+      id: string;
+      name: string;
+      email: string;
+      role: string;
+    }>(API_ENDPOINTS.ME);
+
     return {
       id: response.data.id,
       name: response.data.name,

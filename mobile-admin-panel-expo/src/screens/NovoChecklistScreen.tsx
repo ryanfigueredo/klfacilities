@@ -10,7 +10,12 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import { obterChecklistsOptions, obterChecklistsPendentes, api } from "../services/api";
+import {
+  obterChecklistsOptions,
+  obterChecklistsPendentes,
+  api,
+  initializeAuth,
+} from "../services/api";
 import { API_ENDPOINTS } from "../config/api";
 
 interface GrupoOption {
@@ -48,11 +53,12 @@ export default function NovoChecklistScreen() {
   const [grupos, setGrupos] = useState<GrupoOption[]>([]);
   const [unidades, setUnidades] = useState<UnidadeOption[]>([]);
   const [templates, setTemplates] = useState<TemplateOption[]>([]);
-  
+
   const [selectedGrupo, setSelectedGrupo] = useState<string>("");
   const [selectedUnidade, setSelectedUnidade] = useState<string>("");
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
-  const [templateSelecionado, setTemplateSelecionado] = useState<TemplateOption | null>(null);
+  const [templateSelecionado, setTemplateSelecionado] =
+    useState<TemplateOption | null>(null);
 
   useEffect(() => {
     carregarOpcoes();
@@ -61,9 +67,16 @@ export default function NovoChecklistScreen() {
   const carregarOpcoes = async () => {
     try {
       setLoading(true);
+      await initializeAuth();
       const data = await obterChecklistsOptions();
       setGrupos(data.grupos || []);
-      setUnidades(data.unidades || []);
+      const rawUnidades = data.unidades || [];
+      const allowedIds = data.allowedUnidadeIds;
+      const unidadesParaExibir =
+        Array.isArray(allowedIds) && allowedIds.length > 0
+          ? rawUnidades.filter((u: UnidadeOption) => allowedIds.includes(u.id))
+          : rawUnidades;
+      setUnidades(unidadesParaExibir);
       setTemplates(data.templates || []);
     } catch (error: any) {
       console.error("Erro ao carregar opções:", error);
@@ -99,7 +112,9 @@ export default function NovoChecklistScreen() {
   // Template selecionado (pode ser manual ou automático se houver apenas um)
   useEffect(() => {
     if (selectedTemplate) {
-      const template = templatesDaUnidade.find((t) => t.id === selectedTemplate);
+      const template = templatesDaUnidade.find(
+        (t) => t.id === selectedTemplate
+      );
       setTemplateSelecionado(template || null);
     } else if (templatesDaUnidade.length === 1) {
       // Se houver apenas um template, usar automaticamente
@@ -188,9 +203,12 @@ export default function NovoChecklistScreen() {
 
       if (criarRascunhoResponse.data?.resposta?.id) {
         // Navegar para a tela de responder checklist
-        navigation.navigate("ResponderChecklist" as never, {
-          escopoId: escopo.id,
-        } as never);
+        navigation.navigate(
+          "ResponderChecklist" as never,
+          {
+            escopoId: escopo.id,
+          } as never
+        );
       } else {
         throw new Error("Resposta do servidor inválida");
       }
@@ -206,7 +224,8 @@ export default function NovoChecklistScreen() {
     }
   };
 
-  const podeCriar = selectedGrupo && selectedUnidade && templateSelecionado && !criando;
+  const podeCriar =
+    selectedGrupo && selectedUnidade && templateSelecionado && !criando;
 
   return (
     <View style={styles.container}>
@@ -269,7 +288,11 @@ export default function NovoChecklistScreen() {
                       {grupo.nome}
                     </Text>
                     {selectedGrupo === grupo.id && (
-                      <Ionicons name="checkmark-circle" size={20} color="#009ee2" />
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={20}
+                        color="#009ee2"
+                      />
                     )}
                   </TouchableOpacity>
                 ))}
@@ -304,7 +327,8 @@ export default function NovoChecklistScreen() {
                     key={unidade.id}
                     style={[
                       styles.optionCard,
-                      selectedUnidade === unidade.id && styles.optionCardSelected,
+                      selectedUnidade === unidade.id &&
+                        styles.optionCardSelected,
                     ]}
                     onPress={() => setSelectedUnidade(unidade.id)}
                   >
@@ -312,7 +336,8 @@ export default function NovoChecklistScreen() {
                       <Text
                         style={[
                           styles.optionText,
-                          selectedUnidade === unidade.id && styles.optionTextSelected,
+                          selectedUnidade === unidade.id &&
+                            styles.optionTextSelected,
                         ]}
                       >
                         {unidade.nome}
@@ -326,7 +351,11 @@ export default function NovoChecklistScreen() {
                       )}
                     </View>
                     {selectedUnidade === unidade.id && (
-                      <Ionicons name="checkmark-circle" size={20} color="#009ee2" />
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={20}
+                        color="#009ee2"
+                      />
                     )}
                   </TouchableOpacity>
                 ))}
@@ -340,12 +369,19 @@ export default function NovoChecklistScreen() {
               <Text style={styles.sectionTitle}>Tipo de Checklist *</Text>
               {templatesDaUnidade.length === 0 ? (
                 <View style={styles.emptySection}>
-                  <Ionicons name="document-text-outline" size={48} color="#f44336" />
+                  <Ionicons
+                    name="document-text-outline"
+                    size={48}
+                    color="#f44336"
+                  />
                   <Text style={[styles.emptyText, { color: "#f44336" }]}>
                     Nenhum checklist disponível
                   </Text>
-                  <Text style={[styles.emptyText, { color: "#666", marginTop: 8 }]}>
-                    Esta unidade não possui um modelo de checklist definido. Entre em contato com o administrador.
+                  <Text
+                    style={[styles.emptyText, { color: "#666", marginTop: 8 }]}
+                  >
+                    Esta unidade não possui um modelo de checklist definido.
+                    Entre em contato com o administrador.
                   </Text>
                 </View>
               ) : templatesDaUnidade.length === 1 ? (
@@ -370,7 +406,8 @@ export default function NovoChecklistScreen() {
                         key={template.id}
                         style={[
                           styles.optionCard,
-                          selectedTemplate === template.id && styles.optionCardSelected,
+                          selectedTemplate === template.id &&
+                            styles.optionCardSelected,
                         ]}
                         onPress={() => setSelectedTemplate(template.id)}
                       >
@@ -378,19 +415,27 @@ export default function NovoChecklistScreen() {
                           <Text
                             style={[
                               styles.optionText,
-                              selectedTemplate === template.id && styles.optionTextSelected,
+                              selectedTemplate === template.id &&
+                                styles.optionTextSelected,
                             ]}
                           >
                             {template.titulo}
                           </Text>
                           {template.descricao && (
-                            <Text style={styles.optionSubtext} numberOfLines={2}>
+                            <Text
+                              style={styles.optionSubtext}
+                              numberOfLines={2}
+                            >
                               {template.descricao}
                             </Text>
                           )}
                         </View>
                         {selectedTemplate === template.id && (
-                          <Ionicons name="checkmark-circle" size={20} color="#009ee2" />
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={20}
+                            color="#009ee2"
+                          />
                         )}
                       </TouchableOpacity>
                     ))}
@@ -402,7 +447,10 @@ export default function NovoChecklistScreen() {
 
           {/* Botão de Criar */}
           <TouchableOpacity
-            style={[styles.createButton, !podeCriar && styles.createButtonDisabled]}
+            style={[
+              styles.createButton,
+              !podeCriar && styles.createButtonDisabled,
+            ]}
             onPress={handleCriarChecklist}
             disabled={!podeCriar}
           >
