@@ -89,13 +89,19 @@ export default function PontoScreen({
   onReloadFuncionario,
 }: PontoScreenProps) {
   // Usar localização do contexto (já obtida quando o app abriu)
-  const { location, locationPermission: contextLocationPermission, refreshLocation } = useLocation();
-  
+  const {
+    location,
+    locationPermission: contextLocationPermission,
+    refreshLocation,
+  } = useLocation();
+
   const [tipoSelecionado, setTipoSelecionado] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selfieUri, setSelfieUri] = useState<string | null>(null);
   const [cameraPermission, setCameraPermission] = useState(false);
-  const [locationPermission, setLocationPermission] = useState(contextLocationPermission);
+  const [locationPermission, setLocationPermission] = useState(
+    contextLocationPermission
+  );
   const [isOnline, setIsOnline] = useState(true);
   const [pontosPendentes, setPontosPendentes] = useState(0);
   const [sincronizando, setSincronizando] = useState(false);
@@ -129,12 +135,12 @@ export default function PontoScreen({
       try {
         // Solicitar apenas permissão de câmera (localização já foi solicitada no contexto)
         await requestCameraPermission();
-        
+
         // Se já temos localização do contexto, atualizar geofence imediatamente
         if (location) {
           atualizarValidacaoGeofence(location);
         }
-        
+
         verificarConexao();
         atualizarPontosPendentes();
         // Carregar pontos registrados ao montar componente e quando CPF mudar
@@ -171,7 +177,12 @@ export default function PontoScreen({
     return () => {
       clearTimeout(initTimer);
     };
-  }, [funcionario.cpf, funcionario.unidade.lat, funcionario.unidade.lng, funcionario.unidade.radiusM]); // Recarregar quando o CPF ou coordenadas mudarem
+  }, [
+    funcionario.cpf,
+    funcionario.unidade.lat,
+    funcionario.unidade.lng,
+    funcionario.unidade.radiusM,
+  ]); // Recarregar quando o CPF ou coordenadas mudarem
 
   // Função para atualizar validação de geofence
   const atualizarValidacaoGeofence = (loc?: Location.LocationObject) => {
@@ -184,7 +195,10 @@ export default function PontoScreen({
       funcionario?.unidade?.radiusM
     ) {
       const validacao = validarGeofence(
-        { lat: localizacaoAtual.coords.latitude, lng: localizacaoAtual.coords.longitude },
+        {
+          lat: localizacaoAtual.coords.latitude,
+          lng: localizacaoAtual.coords.longitude,
+        },
         funcionario.unidade
       );
       setGeofenceValidation(validacao);
@@ -212,7 +226,12 @@ export default function PontoScreen({
     if (location) {
       atualizarValidacaoGeofence();
     }
-  }, [funcionario.unidade.lat, funcionario.unidade.lng, funcionario.unidade.radiusM, location]);
+  }, [
+    funcionario.unidade.lat,
+    funcionario.unidade.lng,
+    funcionario.unidade.radiusM,
+    location,
+  ]);
 
   // Buscar pontos registrados do SERVIDOR (por CPF)
   const carregarPontosRegistradosServidor = async () => {
@@ -305,8 +324,7 @@ export default function PontoScreen({
     try {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
+        allowsEditing: false,
         quality: 0.8,
         cameraType: ImagePicker.CameraType.front, // Abrir câmera frontal por padrão
       });
@@ -382,7 +400,7 @@ export default function PontoScreen({
     if (!validacao.valido) {
       const distanciaKm = validacao.distancia
         ? (validacao.distancia / 1000).toFixed(1)
-          : "N/A";
+        : "N/A";
       const distanciaTexto =
         validacao.distancia && validacao.distancia > 1000
           ? `${distanciaKm} km`
@@ -395,7 +413,9 @@ export default function PontoScreen({
             "Localização Inválida (Modo Desenvolvimento)",
             `Você está a ${distanciaTexto} da unidade "${funcionario.unidade.nome}".\n\n` +
               `É necessário estar dentro do raio de ${funcionario.unidade.radiusM}m para registrar o ponto.\n\n` +
-              `Sua localização: ${location.coords.latitude.toFixed(6)}, ${location.coords.longitude.toFixed(6)}\n` +
+              `Sua localização: ${location.coords.latitude.toFixed(
+                6
+              )}, ${location.coords.longitude.toFixed(6)}\n` +
               `Unidade: ${funcionario.unidade.lat}, ${funcionario.unidade.lng}\n\n` +
               `⚠️ MODO DESENVOLVIMENTO: Você pode continuar mesmo assim para teste?`,
             [
@@ -413,14 +433,14 @@ export default function PontoScreen({
           );
         });
       } else {
-      Alert.alert(
-        "Localização Inválida",
+        Alert.alert(
+          "Localização Inválida",
           `Você está a ${distanciaTexto} da unidade "${funcionario.unidade.nome}".\n\n` +
-          `É necessário estar dentro do raio de ${funcionario.unidade.radiusM}m para registrar o ponto.\n\n` +
-          `Verifique se você está na unidade correta ou aguarde alguns segundos para o GPS estabilizar.`,
-        [{ text: "OK" }]
-      );
-      return false;
+            `É necessário estar dentro do raio de ${funcionario.unidade.radiusM}m para registrar o ponto.\n\n` +
+            `Verifique se você está na unidade correta ou aguarde alguns segundos para o GPS estabilizar.`,
+          [{ text: "OK" }]
+        );
+        return false;
       }
     }
 
@@ -582,20 +602,20 @@ export default function PontoScreen({
           // Atualizar lista (quando voltar online vai sincronizar)
           await carregarPontosRegistradosServidor();
 
-        Alert.alert(
-          "Ponto salvo offline",
-          "Seu ponto foi salvo localmente no celular e será sincronizado automaticamente quando a internet voltar.\n\nO ponto será validado pelo servidor durante a sincronização.",
-          [
-            {
-              text: "OK",
-              onPress: () => {
-                setTipoSelecionado(null);
-                setSelfieUri(null);
-                atualizarPontosPendentes();
+          Alert.alert(
+            "Ponto salvo offline",
+            "Seu ponto foi salvo localmente no celular e será sincronizado automaticamente quando a internet voltar.\n\nO ponto será validado pelo servidor durante a sincronização.",
+            [
+              {
+                text: "OK",
+                onPress: () => {
+                  setTipoSelecionado(null);
+                  setSelfieUri(null);
+                  atualizarPontosPendentes();
+                },
               },
-            },
-          ]
-        );
+            ]
+          );
         }
       } else {
         // Sem internet - salvar offline
@@ -796,7 +816,9 @@ export default function PontoScreen({
                 {geofenceValidation.distancia && !geofenceValidation.valido && (
                   <Text style={styles.geofenceStatusDistance}>
                     {geofenceValidation.distancia > 1000
-                      ? `${(geofenceValidation.distancia / 1000).toFixed(1)} km da unidade`
+                      ? `${(geofenceValidation.distancia / 1000).toFixed(
+                          1
+                        )} km da unidade`
                       : `${geofenceValidation.distancia}m da unidade`}
                   </Text>
                 )}
@@ -938,30 +960,32 @@ export default function PontoScreen({
                     style={styles.retakeButtonSmall}
                   >
                     <Ionicons name="camera" size={18} color="#009ee2" />
-                    <Text style={styles.retakeButtonTextSmall}>Tirar Novamente</Text>
-                  </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.registrarButton,
-                    loading && styles.registrarButtonDisabled,
-                  ]}
-                  onPress={handleRegistrarPonto}
-                  disabled={loading}
-                  activeOpacity={0.8}
-                >
-                  {loading ? (
-                    <View style={styles.buttonLoading}>
-                      <ActivityIndicator color="#fff" size="small" />
-                      <Text style={styles.registrarButtonText}>
-                        Processando...
-                      </Text>
-                    </View>
-                  ) : (
-                    <Text style={styles.registrarButtonText}>
-                      ✓ Confirmar Ponto
+                    <Text style={styles.retakeButtonTextSmall}>
+                      Tirar Novamente
                     </Text>
-                  )}
-                </TouchableOpacity>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.registrarButton,
+                      loading && styles.registrarButtonDisabled,
+                    ]}
+                    onPress={handleRegistrarPonto}
+                    disabled={loading}
+                    activeOpacity={0.8}
+                  >
+                    {loading ? (
+                      <View style={styles.buttonLoading}>
+                        <ActivityIndicator color="#fff" size="small" />
+                        <Text style={styles.registrarButtonText}>
+                          Processando...
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.registrarButtonText}>
+                        ✓ Confirmar Ponto
+                      </Text>
+                    )}
+                  </TouchableOpacity>
                 </View>
               </View>
             )}

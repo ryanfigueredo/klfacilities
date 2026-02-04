@@ -70,8 +70,7 @@
         {
           "cameraPermission": "Este app precisa de acesso à câmera para tirar a selfie de registro de ponto.",
           "photosPermission": false,
-          "mediaLibraryPermission": false,
-          "allowsEditing": true
+          "mediaLibraryPermission": false
         }
       ],
       "expo-secure-store",
