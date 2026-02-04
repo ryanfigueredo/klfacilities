@@ -650,7 +650,8 @@ export function ChecklistsRespondidosClient({
                 )}
 
                 <div className="flex justify-end gap-2 pt-2 border-t">
-                  {resposta.status === 'CONCLUIDO' ? (
+                  {/* Permitir Master e Operacional verem checklists não concluídos */}
+                  {(userRole === 'MASTER' || userRole === 'OPERACIONAL' || resposta.status === 'CONCLUIDO') && (
                     <>
                       <Link href={`/operacional/checklists/visualizar/${resposta.id}`}>
                         <Button size="sm" variant="outline">
@@ -658,23 +659,26 @@ export function ChecklistsRespondidosClient({
                           Ver Checklist
                         </Button>
                       </Link>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleDownloadPDF(resposta.id)}
-                        disabled={baixandoId === resposta.id}
-                      >
-                        {baixandoId === resposta.id ? (
-                          'Gerando...'
-                        ) : (
-                          <>
-                            <Download className="h-4 w-4 mr-2" />
-                            Baixar PDF
-                          </>
-                        )}
-                      </Button>
+                      {resposta.status === 'CONCLUIDO' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDownloadPDF(resposta.id)}
+                          disabled={baixandoId === resposta.id}
+                        >
+                          {baixandoId === resposta.id ? (
+                            'Gerando...'
+                          ) : (
+                            <>
+                              <Download className="h-4 w-4 mr-2" />
+                              Baixar PDF
+                            </>
+                          )}
+                        </Button>
+                      )}
                     </>
-                  ) : (
+                  )}
+                  {resposta.status !== 'CONCLUIDO' && userRole !== 'MASTER' && userRole !== 'OPERACIONAL' && (
                     <Link href={`/operacional/checklists/responder/${resposta.escopoId}?respostaId=${resposta.id}`}>
                       <Button size="sm" variant="default">
                         <PlayCircle className="h-4 w-4 mr-2" />

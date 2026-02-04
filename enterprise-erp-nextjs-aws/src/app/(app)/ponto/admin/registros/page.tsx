@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   Card,
   CardContent,
@@ -57,7 +57,8 @@ export default function RegistrosPontoPage() {
   const [registros, setRegistros] = useState<RegistroPonto[]>([]);
   const [unidades, setUnidades] = useState<Unidade[]>([]);
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   // Filtros
   const [month, setMonth] = useState(() => {
@@ -67,18 +68,7 @@ export default function RegistrosPontoPage() {
   const [unidadeId, setUnidadeId] = useState<string>('');
   const [funcionarioId, setFuncionarioId] = useState<string>('');
 
-  useEffect(() => {
-    loadUnidades();
-    loadFuncionarios();
-  }, []);
-
-  useEffect(() => {
-    if (month) {
-      loadRegistros();
-    }
-  }, [month, unidadeId, funcionarioId]);
-
-  const loadUnidades = async () => {
+  const loadUnidades = useCallback(async () => {
     try {
       const res = await fetch('/api/unidades');
       if (res.ok) {
@@ -88,9 +78,9 @@ export default function RegistrosPontoPage() {
     } catch (error) {
       console.error('Erro ao carregar unidades:', error);
     }
-  };
+  }, []);
 
-  const loadFuncionarios = async () => {
+  const loadFuncionarios = useCallback(async () => {
     try {
       const res = await fetch('/api/funcionarios');
       if (res.ok) {
@@ -100,9 +90,14 @@ export default function RegistrosPontoPage() {
     } catch (error) {
       console.error('Erro ao carregar funcionários:', error);
     }
-  };
+  }, []);
 
-  const loadRegistros = async () => {
+  const loadRegistros = useCallback(async () => {
+    if (!month) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -113,10 +108,21 @@ export default function RegistrosPontoPage() {
       const res = await fetch(`/api/ponto/registros?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setRegistros(data.data || []);
+        if (data.ok && Array.isArray(data.data)) {
+          setRegistros(data.data);
+        } else if (Array.isArray(data)) {
+          setRegistros(data);
+        } else {
+          console.error('Formato de dados inválido:', data);
+          setRegistros([]);
+        }
       } else {
-        const error = await res.json();
-        console.error('Erro ao carregar registros:', error);
+        try {
+          const error = await res.json();
+          console.error('Erro ao carregar registros:', error);
+        } catch {
+          console.error('Erro ao carregar registros:', res.statusText);
+        }
         setRegistros([]);
       }
     } catch (error) {
@@ -125,7 +131,19 @@ export default function RegistrosPontoPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [month, unidadeId, funcionarioId]);
+
+  useEffect(() => {
+    setMounted(true);
+    loadUnidades();
+    loadFuncionarios();
+  }, [loadUnidades, loadFuncionarios]);
+
+  useEffect(() => {
+    if (mounted && month) {
+      loadRegistros();
+    }
+  }, [mounted, month, unidadeId, funcionarioId, loadRegistros]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -167,6 +185,14 @@ export default function RegistrosPontoPage() {
         return true;
       })
     : funcionarios;
+
+  if (!mounted) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <RefreshCw className="h-6 w-6 animate-spin text-gray-400" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
