@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb, PDFPage } from 'pdf-lib';
 import { ChecklistResposta, ChecklistPerguntaTemplate } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { generatePresignedDownloadUrl } from '@/lib/s3';
 import fs from 'fs';
 import path from 'path';
 
@@ -225,29 +226,136 @@ async function embedImageFromUrl(
       return null;
     }
 
-    const response = await fetch(imageUrl, {
+    // Se for data URL (base64), processar diretamente
+    if (imageUrl.startsWith('data:image/')) {
+      try {
+        // Extrair o tipo MIME e os dados base64
+        const matches = imageUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+        if (!matches || matches.length < 3) {
+          console.warn('Data URL inválida - formato não reconhecido');
+          return null;
+        }
+
+        const mimeType = matches[1].toLowerCase();
+        const base64Data = matches[2];
+
+        if (!base64Data) {
+          console.warn('Data URL inválida - sem dados base64');
+          return null;
+        }
+
+        const buffer = Buffer.from(base64Data, 'base64');
+
+        // Tentar embedar baseado no tipo MIME
+        if (mimeType === 'png' || mimeType === 'apng') {
+          return await pdfDoc.embedPng(buffer);
+        } else if (mimeType === 'jpeg' || mimeType === 'jpg') {
+          return await pdfDoc.embedJpg(buffer);
+        } else {
+          // Tentar PNG primeiro, depois JPG
+          try {
+            return await pdfDoc.embedPng(buffer);
+          } catch {
+            try {
+              return await pdfDoc.embedJpg(buffer);
+            } catch {
+              console.warn(
+                `Formato de imagem não suportado (data URL): ${mimeType}`
+              );
+              return null;
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Erro ao processar data URL:', error);
+        return null;
+      }
+    }
+
+    // Se for URL do S3, tentar gerar presigned URL se necessário
+    let finalUrl = imageUrl;
+
+    // Verificar se é URL do S3 e se precisa de presigned URL
+    const s3Bucket = process.env.AWS_S3_BUCKET;
+    if (s3Bucket && imageUrl.includes(`s3.`) && imageUrl.includes(s3Bucket)) {
+      // Extrair a key do S3 da URL
+      try {
+        const urlObj = new URL(imageUrl);
+        const key = urlObj.pathname.startsWith('/')
+          ? urlObj.pathname.substring(1)
+          : urlObj.pathname;
+
+        // Se não tiver query params (não é presigned), tentar gerar uma
+        if (!urlObj.search) {
+          try {
+            finalUrl = await generatePresignedDownloadUrl(key, 3600);
+            console.log(
+              '[PDF] Gerada presigned URL para assinatura do gerente'
+            );
+          } catch (presignError) {
+            console.warn(
+              '[PDF] Erro ao gerar presigned URL, tentando URL original:',
+              presignError
+            );
+            // Continuar com URL original
+          }
+        }
+      } catch (urlError) {
+        console.warn('[PDF] Erro ao processar URL do S3:', urlError);
+        // Continuar com URL original
+      }
+    }
+
+    const response = await fetch(finalUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0',
+        Accept: 'image/png,image/jpeg,image/*,*/*',
       },
+      redirect: 'follow',
     });
 
     if (!response.ok) {
-      console.warn(`Erro ao buscar imagem: ${response.status}`);
+      console.warn(
+        `[PDF] Erro ao buscar imagem: ${response.status} - ${response.statusText} - URL: ${finalUrl.substring(0, 100)}`
+      );
       return null;
     }
 
+    // Verificar content-type
+    const contentType = response.headers.get('content-type') || '';
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
+    // Verificar se o buffer não está vazio
+    if (buffer.length === 0) {
+      console.warn('Imagem retornou buffer vazio');
+      return null;
+    }
+
+    // Tentar embedar baseado no content-type ou tentar ambos os formatos
     try {
-      return await pdfDoc.embedPng(buffer);
-    } catch {
-      try {
+      if (contentType.includes('png')) {
+        return await pdfDoc.embedPng(buffer);
+      } else if (contentType.includes('jpeg') || contentType.includes('jpg')) {
         return await pdfDoc.embedJpg(buffer);
-      } catch {
-        console.warn('Formato de imagem não suportado:', imageUrl);
-        return null;
+      } else {
+        // Tentar PNG primeiro, depois JPG
+        try {
+          return await pdfDoc.embedPng(buffer);
+        } catch {
+          try {
+            return await pdfDoc.embedJpg(buffer);
+          } catch {
+            console.warn(
+              `Formato de imagem não suportado: ${contentType || 'desconhecido'}`
+            );
+            return null;
+          }
+        }
       }
+    } catch (embedError) {
+      console.warn('Erro ao embedar imagem:', embedError);
+      return null;
     }
   } catch (error) {
     console.warn('Erro ao carregar imagem:', error);
@@ -566,6 +674,7 @@ export async function generateChecklistPDF(
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
+      timeZone: 'America/Sao_Paulo',
     });
     currentPage.drawText('Data', {
       x: col2X,
@@ -874,21 +983,66 @@ export async function generateChecklistPDF(
 
         // Observação se houver (apenas se tiver resposta)
         if (respostaPergunta && respostaPergunta.observacao) {
-          const obsLines = wrapText(
-            `Observação: ${respostaPergunta.observacao}`,
-            contentWidth - 30,
-            8,
-            regularFont
-          );
-          for (const line of obsLines) {
-            currentPage.drawText(line, {
-              x: margin + 25,
-              y: yPos,
-              size: 8,
-              font: regularFont,
-              color: rgb(0.3, 0.3, 0.3),
-            });
-            yPos -= 10;
+          let observacaoTexto = respostaPergunta.observacao;
+
+          // Se for "Não Conforme", verificar formato da observação
+          if (
+            pergunta.tipo === 'BOOLEANO' &&
+            respostaPergunta.valorBoolean === false
+          ) {
+            // Verificar se já está no formato "Motivo: ... O que foi feito para resolver: ..."
+            if (
+              observacaoTexto.includes('Motivo:') &&
+              observacaoTexto.includes('O que foi feito para resolver:')
+            ) {
+              // Já está formatado, usar direto
+            } else {
+              // Tentar parsear JSON
+              try {
+                const parsed = JSON.parse(respostaPergunta.observacao);
+                if (parsed.motivo && parsed.resolucao) {
+                  observacaoTexto = `Motivo: ${parsed.motivo}\n\nO que foi feito para resolver: ${parsed.resolucao}`;
+                }
+              } catch {
+                // Se não for JSON, usar o texto direto
+              }
+            }
+          }
+
+          // Título da observação
+          currentPage.drawText('Observação:', {
+            x: margin + 25,
+            y: yPos,
+            size: 8,
+            font: boldFont,
+            color: rgb(0.2, 0.2, 0.2),
+          });
+          yPos -= 12;
+
+          // Dividir em linhas preservando quebras de linha
+          const linhasObservacao = observacaoTexto.split('\n');
+          for (const linha of linhasObservacao) {
+            if (linha.trim()) {
+              const obsLines = wrapText(
+                linha.trim(),
+                contentWidth - 30,
+                8,
+                regularFont
+              );
+              for (const line of obsLines) {
+                currentPage.drawText(line, {
+                  x: margin + 25,
+                  y: yPos,
+                  size: 8,
+                  font: regularFont,
+                  color: rgb(0.2, 0.2, 0.2),
+                });
+                yPos -= 10;
+              }
+            } else {
+              // Linha vazia - pular um pouco
+              yPos -= 5;
+            }
           }
         }
 
@@ -1187,28 +1341,52 @@ export async function generateChecklistPDF(
       yPos -= 15;
 
       try {
-        const gerenteImage = await embedImageFromUrl(
-          pdfDoc,
-          resposta.gerenteAssinaturaFotoUrl
-        );
+        // Tentar carregar a imagem da assinatura
+        let gerenteImage = null;
+        let imageError = null;
+
+        try {
+          gerenteImage = await embedImageFromUrl(
+            pdfDoc,
+            resposta.gerenteAssinaturaFotoUrl
+          );
+        } catch (err) {
+          imageError = err;
+          console.error(
+            '[PDF] Erro ao embedar imagem da assinatura do gerente:',
+            err
+          );
+        }
+
         if (gerenteImage) {
+          // Calcular dimensões mantendo proporção (mesmo padrão do supervisor)
           const imgWidth = Math.min(
             signatureLineWidth - 10,
             (gerenteImage.width / gerenteImage.height) * signatureHeight
           );
           const imgHeight =
             (gerenteImage.height / gerenteImage.width) * imgWidth;
+
+          // Desenhar a imagem da assinatura (mesmo padrão do supervisor)
           currentPage.drawImage(gerenteImage, {
             x: margin,
             y: yPos - imgHeight,
             width: imgWidth,
             height: imgHeight,
           });
+
+          yPos -= imgHeight + 5;
+        } else {
+          console.warn(
+            'Não foi possível carregar a imagem da assinatura do gerente',
+            imageError
+          );
         }
       } catch (error) {
-        console.warn('Erro ao carregar foto de assinatura do gerente:', error);
+        console.error('Erro ao carregar foto de assinatura do gerente:', error);
       }
 
+      // Desenhar linha de assinatura (mesmo padrão do supervisor)
       currentPage.drawLine({
         start: { x: margin, y: yPos - signatureHeight - 5 },
         end: { x: margin + signatureLineWidth, y: yPos - signatureHeight - 5 },
@@ -1230,7 +1408,7 @@ export async function generateChecklistPDF(
     // Rodapé em todas as páginas
     const pages = pdfDoc.getPages();
     const footerY = margin;
-    const footerText = `${branding.companyName} - Gerado em ${new Date().toLocaleString('pt-BR')}`;
+    const footerText = `${branding.companyName} - Gerado em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`;
 
     pages.forEach((page, index) => {
       // Barra inferior
