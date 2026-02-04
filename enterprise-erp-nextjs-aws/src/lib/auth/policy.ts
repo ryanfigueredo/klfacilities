@@ -17,6 +17,7 @@ export type AppModule =
   | 'grupos'
   | 'responsaveis'
   | 'categorias'
+  | 'produtos'
   | 'carros'
   | 'logs'
   | 'usuarios'
@@ -51,6 +52,7 @@ export const policyMatrix: Record<
     grupos: ['list', 'create', 'update', 'delete'],
     responsaveis: ['list', 'create', 'update', 'delete'],
     categorias: ['list', 'create', 'update', 'delete'],
+    produtos: ['list', 'create', 'update', 'delete'],
     carros: ['list', 'create', 'update', 'delete'],
     logs: ['list', 'export'],
     usuarios: ['list', 'create', 'update', 'delete'],
@@ -65,6 +67,7 @@ export const policyMatrix: Record<
     grupos: ['list', 'create', 'update', 'delete'],
     responsaveis: ['list', 'create', 'update', 'delete'],
     categorias: ['list', 'create', 'update', 'delete'],
+    produtos: ['list', 'create', 'update', 'delete'],
     carros: ['list', 'create', 'update', 'delete'],
     logs: ['list', 'export'],
     usuarios: ['list', 'create', 'update', 'delete'],
@@ -85,6 +88,7 @@ export const policyMatrix: Record<
     movimentos: ['list'],
     provisionamentos: ['list'],
     categorias: ['list'],
+    produtos: ['list'],
     logs: ['list'],
     relatorios: ['read'],
     incidentes: ['list', 'create', 'update'],
@@ -140,15 +144,18 @@ export function can(
 ): boolean {
   const r = normalizeRole(role);
   if (!r) return false;
-  
+
   // MASTER sempre tem acesso a tudo
   if (r === 'MASTER') return true;
-  
+
   // OPERACIONAL e PLANEJAMENTO_ESTRATEGICO não têm acesso a módulos financeiros
-  if ((r === 'OPERACIONAL' || r === 'PLANEJAMENTO_ESTRATEGICO') && (mod === 'movimentos' || mod === 'provisionamentos')) {
+  if (
+    (r === 'OPERACIONAL' || r === 'PLANEJAMENTO_ESTRATEGICO') &&
+    (mod === 'movimentos' || mod === 'provisionamentos')
+  ) {
     return false;
   }
-  
+
   const allowed = policyMatrix[r]?.[mod] ?? [];
   return allowed.includes(action);
 }

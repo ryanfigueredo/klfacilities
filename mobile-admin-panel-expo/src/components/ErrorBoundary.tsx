@@ -37,7 +37,14 @@ export class ErrorBoundary extends React.Component<
         <View style={styles.container}>
           <Text style={styles.title}>Ops! Algo deu errado</Text>
           <Text style={styles.message}>
-            {this.state.error?.message || "Erro desconhecido"}
+            {typeof this.state.error?.message === "string"
+              ? this.state.error.message
+              : "Erro desconhecido"}
+          </Text>
+          <Text style={styles.xiaomiHint}>
+            Se o app fechar sozinho em celulares Xiaomi/Redmi: Configurações →
+            Apps → KL Administração → Bateria → "Sem restrição" e ative "Iniciar
+            automaticamente".
           </Text>
           <TouchableOpacity
             style={styles.button}
@@ -71,7 +78,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#666",
     textAlign: "center",
+    marginBottom: 16,
+  },
+  xiaomiHint: {
+    fontSize: 12,
+    color: "#888",
+    textAlign: "center",
     marginBottom: 24,
+    paddingHorizontal: 16,
+    fontStyle: "italic",
   },
   button: {
     backgroundColor: "#009ee2",

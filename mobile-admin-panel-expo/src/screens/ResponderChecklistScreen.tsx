@@ -95,6 +95,10 @@ function getErrorMessage(err: unknown, fallback: string): string {
   if (typeof err === "string") return err;
   const msg = (err as any)?.message;
   if (typeof msg === "string") return msg;
+  if (msg != null && typeof msg === "object") {
+    const detail = (msg as any)?.detail ?? (msg as any)?.error;
+    if (typeof detail === "string") return detail;
+  }
   return fallback;
 }
 
@@ -1018,10 +1022,14 @@ export default function ResponderChecklistScreen() {
         errorMessage = "Checklist não encontrado. Ele pode ter sido removido.";
       } else if (
         error?.code === "NETWORK_ERROR" ||
-        error?.message?.includes("Network")
+        (typeof error?.message === "string" &&
+          error.message.includes("Network"))
       ) {
         errorMessage =
           "Erro de conexão. Verifique sua internet e tente novamente.";
+      } else {
+        const raw = getErrorMessage(error, "");
+        if (typeof raw === "string" && raw.trim()) errorMessage = raw;
       }
 
       Alert.alert("Erro", errorMessage, [
@@ -1909,7 +1917,11 @@ export default function ResponderChecklistScreen() {
       }
     } catch (error: any) {
       console.error("Erro ao capturar selfie:", error);
-      Alert.alert("Erro", "Não foi possível capturar sua selfie.");
+      const msg = getErrorMessage(
+        error,
+        "Não foi possível capturar sua selfie. Verifique a permissão da câmera e tente novamente."
+      );
+      Alert.alert("Erro", msg);
     }
   }, []);
 
@@ -2284,7 +2296,11 @@ export default function ResponderChecklistScreen() {
         errorMessage = rawMsg;
       }
 
-      Alert.alert("Erro", String(errorMessage));
+      const messageToShow =
+        typeof errorMessage === "string"
+          ? errorMessage
+          : "Não foi possível finalizar o checklist. Tente novamente.";
+      Alert.alert("Erro", messageToShow);
     } finally {
       setEnviando(false);
     }

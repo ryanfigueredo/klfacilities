@@ -54,7 +54,9 @@ export default function ChecklistBanheirosScreen() {
   const carregarUnidades = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.CHECKLIST_DIGITAL_UNIDADES}`);
+      const response = await fetch(
+        `${API_URL}${API_ENDPOINTS.CHECKLIST_DIGITAL_UNIDADES}`
+      );
       const data = await response.json();
 
       if (response.ok && data.data) {
@@ -64,7 +66,10 @@ export default function ChecklistBanheirosScreen() {
       }
     } catch (error: any) {
       console.error("Erro ao carregar unidades:", error);
-      Alert.alert("Erro", "Não foi possível carregar as unidades. Verifique sua conexão.");
+      Alert.alert(
+        "Erro",
+        "Não foi possível carregar as unidades. Verifique sua conexão."
+      );
     } finally {
       setLoading(false);
     }
@@ -74,7 +79,7 @@ export default function ChecklistBanheirosScreen() {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
+        allowsEditing: false,
         quality: 0.8,
       });
 
@@ -100,7 +105,7 @@ export default function ChecklistBanheirosScreen() {
 
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
+        allowsEditing: false,
         quality: 0.8,
       });
 
@@ -131,9 +136,7 @@ export default function ChecklistBanheirosScreen() {
 
   const handleToggleFator = (fator: string) => {
     setFatoresInfluencia((prev) =>
-      prev.includes(fator)
-        ? prev.filter((f) => f !== fator)
-        : [...prev, fator]
+      prev.includes(fator) ? prev.filter((f) => f !== fator) : [...prev, fator]
     );
   };
 
@@ -210,14 +213,17 @@ export default function ChecklistBanheirosScreen() {
       // Obter token de autenticação
       const token = await SecureStore.getItemAsync("authToken");
 
-      const response = await fetch(`${API_URL}${API_ENDPOINTS.CHECKLIST_DIGITAL_SUBMIT}`, {
-        method: "POST",
-        body: formData,
-        headers: {
-          Accept: "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
+      const response = await fetch(
+        `${API_URL}${API_ENDPOINTS.CHECKLIST_DIGITAL_SUBMIT}`,
+        {
+          method: "POST",
+          body: formData,
+          headers: {
+            Accept: "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        }
+      );
 
       const result = await response.json();
 
@@ -244,7 +250,10 @@ export default function ChecklistBanheirosScreen() {
       }
     } catch (error: any) {
       console.error("Erro ao enviar checklist:", error);
-      Alert.alert("Erro", error.message || "Não foi possível enviar o checklist.");
+      Alert.alert(
+        "Erro",
+        error.message || "Não foi possível enviar o checklist."
+      );
     } finally {
       setSubmitting(false);
     }
@@ -273,7 +282,10 @@ export default function ChecklistBanheirosScreen() {
           <Text style={styles.headerTitle}>Checklist de Banheiros</Text>
         </View>
 
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+        >
           {/* Seleção de Unidade */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Selecione a Unidade</Text>
@@ -282,14 +294,21 @@ export default function ChecklistBanheirosScreen() {
                 key={unidade.id}
                 style={[
                   styles.unidadeCard,
-                  selectedUnidade?.id === unidade.id && styles.unidadeCardSelected,
+                  selectedUnidade?.id === unidade.id &&
+                    styles.unidadeCardSelected,
                 ]}
                 onPress={() => setSelectedUnidade(unidade)}
               >
                 <Ionicons
-                  name={selectedUnidade?.id === unidade.id ? "checkmark-circle" : "location"}
+                  name={
+                    selectedUnidade?.id === unidade.id
+                      ? "checkmark-circle"
+                      : "location"
+                  }
                   size={24}
-                  color={selectedUnidade?.id === unidade.id ? "#4CAF50" : "#666"}
+                  color={
+                    selectedUnidade?.id === unidade.id ? "#4CAF50" : "#666"
+                  }
                 />
                 <View style={styles.unidadeInfo}>
                   <Text style={styles.unidadeNome}>{unidade.nome}</Text>
@@ -302,7 +321,9 @@ export default function ChecklistBanheirosScreen() {
           {/* Seleção de Tipo */}
           {selectedUnidade && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Selecione o Tipo de Checklist</Text>
+              <Text style={styles.sectionTitle}>
+                Selecione o Tipo de Checklist
+              </Text>
               <TouchableOpacity
                 style={[
                   styles.tipoCard,
@@ -389,19 +410,27 @@ export default function ChecklistBanheirosScreen() {
         </View>
       </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+      >
         {selectedTipo === "LIMPEZA" && (
           <View style={styles.section}>
             <Text style={styles.label}>Quais serviços você precisa?</Text>
             <TouchableOpacity
               style={[
                 styles.checkboxCard,
-                servicosLimpeza.includes("LIMPEZA") && styles.checkboxCardSelected,
+                servicosLimpeza.includes("LIMPEZA") &&
+                  styles.checkboxCardSelected,
               ]}
               onPress={() => handleToggleServico("LIMPEZA")}
             >
               <Ionicons
-                name={servicosLimpeza.includes("LIMPEZA") ? "checkbox" : "square-outline"}
+                name={
+                  servicosLimpeza.includes("LIMPEZA")
+                    ? "checkbox"
+                    : "square-outline"
+                }
                 size={24}
                 color={servicosLimpeza.includes("LIMPEZA") ? "#009ee2" : "#666"}
               />
@@ -410,14 +439,21 @@ export default function ChecklistBanheirosScreen() {
             <TouchableOpacity
               style={[
                 styles.checkboxCard,
-                servicosLimpeza.includes("RETIRADA_LIXO") && styles.checkboxCardSelected,
+                servicosLimpeza.includes("RETIRADA_LIXO") &&
+                  styles.checkboxCardSelected,
               ]}
               onPress={() => handleToggleServico("RETIRADA_LIXO")}
             >
               <Ionicons
-                name={servicosLimpeza.includes("RETIRADA_LIXO") ? "checkbox" : "square-outline"}
+                name={
+                  servicosLimpeza.includes("RETIRADA_LIXO")
+                    ? "checkbox"
+                    : "square-outline"
+                }
                 size={24}
-                color={servicosLimpeza.includes("RETIRADA_LIXO") ? "#009ee2" : "#666"}
+                color={
+                  servicosLimpeza.includes("RETIRADA_LIXO") ? "#009ee2" : "#666"
+                }
               />
               <Text style={styles.checkboxLabel}>Retirada de lixo</Text>
             </TouchableOpacity>
@@ -428,7 +464,10 @@ export default function ChecklistBanheirosScreen() {
                 <Ionicons name="camera" size={20} color="#009ee2" />
                 <Text style={styles.photoButtonText}>Tirar Foto</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.photoButton} onPress={selecionarFoto}>
+              <TouchableOpacity
+                style={styles.photoButton}
+                onPress={selecionarFoto}
+              >
                 <Ionicons name="image" size={20} color="#009ee2" />
                 <Text style={styles.photoButtonText}>Escolher da Galeria</Text>
               </TouchableOpacity>
@@ -446,7 +485,9 @@ export default function ChecklistBanheirosScreen() {
 
         {selectedTipo === "INSUMOS" && (
           <View style={styles.section}>
-            <Text style={styles.label}>Quais insumos você gostaria de solicitar?</Text>
+            <Text style={styles.label}>
+              Quais insumos você gostaria de solicitar?
+            </Text>
             <TouchableOpacity
               style={[
                 styles.checkboxCard,
@@ -463,7 +504,9 @@ export default function ChecklistBanheirosScreen() {
                 }
                 size={24}
                 color={
-                  insumosSolicitados.includes("ALCOOL_HIGIENIZACAO") ? "#009ee2" : "#666"
+                  insumosSolicitados.includes("ALCOOL_HIGIENIZACAO")
+                    ? "#009ee2"
+                    : "#666"
                 }
               />
               <Text style={styles.checkboxLabel}>Álcool higienização mãos</Text>
@@ -471,42 +514,67 @@ export default function ChecklistBanheirosScreen() {
             <TouchableOpacity
               style={[
                 styles.checkboxCard,
-                insumosSolicitados.includes("PAPEL_HIGIENICO") && styles.checkboxCardSelected,
+                insumosSolicitados.includes("PAPEL_HIGIENICO") &&
+                  styles.checkboxCardSelected,
               ]}
               onPress={() => handleToggleInsumo("PAPEL_HIGIENICO")}
             >
               <Ionicons
-                name={insumosSolicitados.includes("PAPEL_HIGIENICO") ? "checkbox" : "square-outline"}
+                name={
+                  insumosSolicitados.includes("PAPEL_HIGIENICO")
+                    ? "checkbox"
+                    : "square-outline"
+                }
                 size={24}
-                color={insumosSolicitados.includes("PAPEL_HIGIENICO") ? "#009ee2" : "#666"}
+                color={
+                  insumosSolicitados.includes("PAPEL_HIGIENICO")
+                    ? "#009ee2"
+                    : "#666"
+                }
               />
               <Text style={styles.checkboxLabel}>Papel higiênico</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[
                 styles.checkboxCard,
-                insumosSolicitados.includes("PAPEL_TOALHA") && styles.checkboxCardSelected,
+                insumosSolicitados.includes("PAPEL_TOALHA") &&
+                  styles.checkboxCardSelected,
               ]}
               onPress={() => handleToggleInsumo("PAPEL_TOALHA")}
             >
               <Ionicons
-                name={insumosSolicitados.includes("PAPEL_TOALHA") ? "checkbox" : "square-outline"}
+                name={
+                  insumosSolicitados.includes("PAPEL_TOALHA")
+                    ? "checkbox"
+                    : "square-outline"
+                }
                 size={24}
-                color={insumosSolicitados.includes("PAPEL_TOALHA") ? "#009ee2" : "#666"}
+                color={
+                  insumosSolicitados.includes("PAPEL_TOALHA")
+                    ? "#009ee2"
+                    : "#666"
+                }
               />
               <Text style={styles.checkboxLabel}>Papel toalha</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[
                 styles.checkboxCard,
-                insumosSolicitados.includes("SABONETE") && styles.checkboxCardSelected,
+                insumosSolicitados.includes("SABONETE") &&
+                  styles.checkboxCardSelected,
               ]}
               onPress={() => handleToggleInsumo("SABONETE")}
             >
               <Ionicons
-                name={insumosSolicitados.includes("SABONETE") ? "checkbox" : "square-outline"}
+                name={
+                  insumosSolicitados.includes("SABONETE")
+                    ? "checkbox"
+                    : "square-outline"
+                }
                 size={24}
-                color={insumosSolicitados.includes("SABONETE") ? "#009ee2" : "#666"}
+                color={
+                  insumosSolicitados.includes("SABONETE") ? "#009ee2" : "#666"
+                }
               />
               <Text style={styles.checkboxLabel}>Sabonete</Text>
             </TouchableOpacity>
@@ -516,7 +584,9 @@ export default function ChecklistBanheirosScreen() {
         {selectedTipo === "SATISFACAO" && (
           <View style={styles.section}>
             <Text style={styles.label}>Como você avalia a limpeza?</Text>
-            {(["MUITO_RUIM", "RUIM", "REGULAR", "BOM", "MUITO_BOM"] as const).map((avaliacao) => {
+            {(
+              ["MUITO_RUIM", "RUIM", "REGULAR", "BOM", "MUITO_BOM"] as const
+            ).map((avaliacao) => {
               const labels: Record<string, string> = {
                 MUITO_RUIM: "Muito Ruim",
                 RUIM: "Ruim",
@@ -534,7 +604,11 @@ export default function ChecklistBanheirosScreen() {
                   onPress={() => setAvaliacaoLimpeza(avaliacao)}
                 >
                   <Ionicons
-                    name={avaliacaoLimpeza === avaliacao ? "radio-button-on" : "radio-button-off"}
+                    name={
+                      avaliacaoLimpeza === avaliacao
+                        ? "radio-button-on"
+                        : "radio-button-off"
+                    }
                     size={24}
                     color={avaliacaoLimpeza === avaliacao ? "#009ee2" : "#666"}
                   />
@@ -543,14 +617,18 @@ export default function ChecklistBanheirosScreen() {
               );
             })}
 
-            <Text style={styles.label}>O que influenciou sua avaliação? (opcional)</Text>
-            {([
-              "CHEIRO",
-              "DISPONIBILIDADE_INSUMOS",
-              "LIMPEZA_SUPERFICIES",
-              "POSTURA_EQUIPE",
-              "RECOLHIMENTO_LIXO",
-            ] as const).map((fator) => {
+            <Text style={styles.label}>
+              O que influenciou sua avaliação? (opcional)
+            </Text>
+            {(
+              [
+                "CHEIRO",
+                "DISPONIBILIDADE_INSUMOS",
+                "LIMPEZA_SUPERFICIES",
+                "POSTURA_EQUIPE",
+                "RECOLHIMENTO_LIXO",
+              ] as const
+            ).map((fator) => {
               const labels: Record<string, string> = {
                 CHEIRO: "Cheiro",
                 DISPONIBILIDADE_INSUMOS: "Disponibilidade de insumos",
@@ -563,14 +641,21 @@ export default function ChecklistBanheirosScreen() {
                   key={fator}
                   style={[
                     styles.checkboxCard,
-                    fatoresInfluencia.includes(fator) && styles.checkboxCardSelected,
+                    fatoresInfluencia.includes(fator) &&
+                      styles.checkboxCardSelected,
                   ]}
                   onPress={() => handleToggleFator(fator)}
                 >
                   <Ionicons
-                    name={fatoresInfluencia.includes(fator) ? "checkbox" : "square-outline"}
+                    name={
+                      fatoresInfluencia.includes(fator)
+                        ? "checkbox"
+                        : "square-outline"
+                    }
                     size={24}
-                    color={fatoresInfluencia.includes(fator) ? "#009ee2" : "#666"}
+                    color={
+                      fatoresInfluencia.includes(fator) ? "#009ee2" : "#666"
+                    }
                   />
                   <Text style={styles.checkboxLabel}>{labels[fator]}</Text>
                 </TouchableOpacity>
@@ -591,7 +676,10 @@ export default function ChecklistBanheirosScreen() {
         )}
 
         <TouchableOpacity
-          style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
+          style={[
+            styles.submitButton,
+            submitting && styles.submitButtonDisabled,
+          ]}
           onPress={handleSubmit}
           disabled={submitting}
         >

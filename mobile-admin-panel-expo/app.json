@@ -2,7 +2,7 @@
   "expo": {
     "name": "KL Administração",
     "slug": "kl-adm",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -11,13 +11,11 @@
       "resizeMode": "contain",
       "backgroundColor": "#009ee2"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kl.adm",
-      "buildNumber": "2",
+      "buildNumber": "1",
       "icon": "./assets/icon.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -43,7 +41,7 @@
       "privacyManifests": {
         "NSPrivacyAccessedAPITypes": []
       },
-        "privacyPolicyUrl": "https://www.klfacilities.com.br/compliance/privacidade"
+      "privacyPolicyUrl": "https://www.klfacilities.com.br/compliance/privacidade"
     },
     "web": {
       "favicon": "./assets/favicon-96x96.png"
@@ -71,7 +69,7 @@
           "cameraPermission": "Este app precisa de acesso à câmera para tirar fotos dos checklists.",
           "photosPermission": "Este app precisa de acesso à biblioteca de fotos para anexar imagens aos checklists.",
           "mediaLibraryPermission": "Este app precisa de acesso à biblioteca de mídia para anexar imagens aos checklists.",
-          "allowsEditing": true
+          "allowsEditing": false
         }
       ],
       [

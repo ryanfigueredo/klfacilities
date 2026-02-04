@@ -16,7 +16,12 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import { authByEmailPassword, User, setAuthToken, forgotPassword } from "../services/api";
+import {
+  authByEmailPassword,
+  User,
+  setAuthToken,
+  forgotPassword,
+} from "../services/api";
 import * as SecureStore from "expo-secure-store";
 
 const SAVED_EMAIL_KEY = "lastEmail";
@@ -37,6 +42,7 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
   const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
+  const [showXiaomiHelp, setShowXiaomiHelp] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
 
@@ -261,8 +267,12 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                     setRememberPassword(newVal);
                     // Persistir preferência e limpar senha salva se desmarcar
                     try {
-                      await SecureStore.setItemAsync(REMEMBER_PASSWORD_KEY, newVal ? "true" : "false");
-                      if (!newVal) await SecureStore.deleteItemAsync(SAVED_PASSWORD_KEY);
+                      await SecureStore.setItemAsync(
+                        REMEMBER_PASSWORD_KEY,
+                        newVal ? "true" : "false"
+                      );
+                      if (!newVal)
+                        await SecureStore.deleteItemAsync(SAVED_PASSWORD_KEY);
                     } catch (e) {
                       console.error("Erro ao salvar preferência:", e);
                     }
@@ -307,6 +317,15 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
               Acesso restrito a administradores e supervisores
             </Text>
 
+            <TouchableOpacity
+              onPress={() => setShowXiaomiHelp(true)}
+              style={styles.xiaomiHelpLink}
+            >
+              <Text style={styles.xiaomiHelpLinkText}>
+                App fechando sozinho? (Xiaomi/Redmi)
+              </Text>
+            </TouchableOpacity>
+
             <Animated.View
               style={[
                 styles.developerContainer,
@@ -323,6 +342,49 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Modal Ajuda Xiaomi */}
+      <Modal
+        visible={showXiaomiHelp}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowXiaomiHelp(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                App fechando sozinho? (Xiaomi/Redmi)
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowXiaomiHelp(false)}
+                style={styles.modalCloseButton}
+              >
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalSubtitle}>
+              Em celulares Xiaomi, Redmi ou HyperOS, o sistema pode fechar o app
+              para economizar bateria. Faça o seguinte:
+            </Text>
+            <Text style={styles.xiaomiSteps}>
+              1. Abra Configurações do celular{"\n"}
+              2. Apps → KL Administração{"\n"}
+              3. Bateria → escolha "Sem restrição"{"\n"}
+              4. Ative "Iniciar automaticamente" (se existir)
+            </Text>
+            <Text style={styles.xiaomiSteps}>
+              Isso evita que o app seja fechado em segundo plano.
+            </Text>
+            <TouchableOpacity
+              style={styles.button}
+              onPress={() => setShowXiaomiHelp(false)}
+            >
+              <Text style={styles.buttonText}>Entendi</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Modal Esqueci Senha */}
       <Modal
@@ -495,6 +557,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#999",
     textAlign: "center",
+  },
+  xiaomiHelpLink: {
+    marginTop: 12,
+    paddingVertical: 8,
+  },
+  xiaomiHelpLinkText: {
+    fontSize: 12,
+    color: "#009ee2",
+    textAlign: "center",
+    textDecorationLine: "underline",
+  },
+  xiaomiSteps: {
+    fontSize: 14,
+    color: "#333",
+    lineHeight: 22,
+    marginBottom: 12,
   },
   rememberRow: {
     flexDirection: "row",
