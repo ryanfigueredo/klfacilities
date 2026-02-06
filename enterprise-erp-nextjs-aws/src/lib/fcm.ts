@@ -5,6 +5,7 @@ async function getFirebaseAdmin() {
   if (firebaseAdmin) return firebaseAdmin;
 
   try {
+    // @ts-ignore - firebase-admin pode não estar resolvido em alguns ambientes de build
     const adminModule = await import('firebase-admin');
     firebaseAdmin = adminModule;
 
