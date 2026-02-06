@@ -24,7 +24,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -117,24 +116,6 @@ fun LoginScreen(
                                 val body = res.body()!!
                                 authRepository.saveAuth(body.token, body.user.id, body.user.name, body.user.email, body.user.role)
                                 
-                                // Registrar token FCM após login bem-sucedido
-                                try {
-                                    val fcmToken = FirebaseMessaging.getInstance().token.await()
-                                    val notificationRepo = NotificationRepository()
-                                    val deviceId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                        android.provider.Settings.Secure.getString(
-                                            LocalContext.current.contentResolver,
-                                            android.provider.Settings.Secure.ANDROID_ID
-                                        )
-                                    } else {
-                                        null
-                                    }
-                                    notificationRepo.registerToken(fcmToken, deviceId)
-                                } catch (e: Exception) {
-                                    // Não bloquear login se falhar registro do token
-                                    android.util.Log.e("LoginScreen", "Erro ao registrar token FCM", e)
-                                }
-                                
                                 true
                             } else {
                                 res.errorBody()?.string() ?: "Erro ao fazer login"
@@ -143,7 +124,21 @@ fun LoginScreen(
                     }
                     loading = false
                     when {
-                        result.getOrNull() == true -> onLoginSuccess()
+                        result.getOrNull() == true -> {
+                            onLoginSuccess()
+                            // Registrar token FCM após login bem-sucedido (em background, não bloqueia navegação)
+                            launch(Dispatchers.IO) {
+                                try {
+                                    val fcmToken = FirebaseMessaging.getInstance().token.await()
+                                    val notificationRepo = NotificationRepository()
+                                    // deviceId opcional - não crítico para funcionamento
+                                    notificationRepo.registerToken(fcmToken, null)
+                                } catch (e: Exception) {
+                                    // Não bloquear login se falhar registro do token
+                                    android.util.Log.e("LoginScreen", "Erro ao registrar token FCM", e)
+                                }
+                            }
+                        }
                         else -> error = (result.exceptionOrNull()?.message ?: result.getOrNull().toString()).takeIf { it is String } ?: "Verifique email e senha."
                     }
                 }

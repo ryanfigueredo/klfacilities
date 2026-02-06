@@ -215,23 +215,21 @@ fun PontoDetailScreen(
                             )
                         }
                         Spacer(modifier = Modifier.height(8.dp))
-                        try {
-                            val date = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).parse(timestamp)
-                            val formattedDate = date?.let {
-                                SimpleDateFormat("dd/MM/yyyy 'às' HH:mm", Locale("pt", "BR")).format(it)
-                            } ?: timestamp
-                            Text(
-                                formattedDate,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        } catch (e: Exception) {
-                            Text(
-                                timestamp,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                        val formattedDate = remember(timestamp) {
+                            try {
+                                val date = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).parse(timestamp)
+                                date?.let {
+                                    SimpleDateFormat("dd/MM/yyyy 'às' HH:mm", Locale("pt", "BR")).format(it)
+                                } ?: timestamp
+                            } catch (e: Exception) {
+                                timestamp
+                            }
                         }
+                        Text(
+                            formattedDate,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
 

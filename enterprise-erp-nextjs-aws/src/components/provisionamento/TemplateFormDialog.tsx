@@ -78,41 +78,25 @@ export function TemplateFormDialog({
     categoriaId: initialData?.categoriaId || '',
   });
 
-  React.useEffect(() => {
-    if (open) {
-      loadGrupos();
-      loadCategorias();
-      if (form.grupoId) loadUnidades(form.grupoId);
-    }
-  }, [open]);
-
-  React.useEffect(() => {
-    if (form.grupoId) loadUnidades(form.grupoId);
-  }, [form.grupoId]);
-
-  React.useEffect(() => {
-    loadCategorias();
-  }, [form.tipo]);
-
-  const loadGrupos = async () => {
+  const loadGrupos = React.useCallback(async () => {
     try {
       const r = await fetch('/api/grupos');
       const j = await r.json().catch(() => ({}));
       const arr = Array.isArray(j?.data) ? j.data : Array.isArray(j) ? j : [];
       setGrupos(arr);
     } catch {}
-  };
+  }, []);
 
-  const loadCategorias = async () => {
+  const loadCategorias = React.useCallback(async () => {
     try {
       const r = await fetch(`/api/categorias?tipo=${form.tipo ?? 'DESPESA'}`);
       const j = await r.json().catch(() => ({}));
       const arr = Array.isArray(j?.data) ? j.data : Array.isArray(j) ? j : [];
       setCategorias(arr);
     } catch {}
-  };
+  }, [form.tipo]);
 
-  const loadUnidades = async (grupoId: string) => {
+  const loadUnidades = React.useCallback(async (grupoId: string) => {
     if (!grupoId) {
       setUnidades([]);
       return;
@@ -125,7 +109,23 @@ export function TemplateFormDialog({
       const arr = Array.isArray(j?.unidades) ? j.unidades : [];
       setUnidades(arr);
     } catch {}
-  };
+  }, []);
+
+  React.useEffect(() => {
+    if (open) {
+      loadGrupos();
+      loadCategorias();
+      if (form.grupoId) loadUnidades(form.grupoId);
+    }
+  }, [open, form.grupoId, loadGrupos, loadCategorias, loadUnidades]);
+
+  React.useEffect(() => {
+    if (form.grupoId) loadUnidades(form.grupoId);
+  }, [form.grupoId, loadUnidades]);
+
+  React.useEffect(() => {
+    loadCategorias();
+  }, [form.tipo, loadCategorias]);
 
   const handleChange =
     (key: keyof Template) =>

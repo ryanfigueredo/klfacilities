@@ -12,12 +12,40 @@ android {
         applicationId = "com.kl.adm"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
+        // Version Code: Deve ser maior que o atual no Play Console
+        // Se o app Expo atual tem versionCode = 5, use 6 ou maior
+        // Ajuste este valor conforme necessário após verificar no Play Console
+        versionCode = (project.findProperty("VERSION_CODE") as String?)?.toIntOrNull() ?: 10
         versionName = "2.0.0"
+    }
+
+    signingConfigs {
+        create("release") {
+            // Configuração via variáveis de ambiente ou gradle.properties
+            val keystoreFile = project.findProperty("KEYSTORE_FILE") as String?
+            val keystorePassword = project.findProperty("KEYSTORE_PASSWORD") as String?
+            val keyAlias = project.findProperty("KEY_ALIAS") as String?
+            val keyPassword = project.findProperty("KEY_PASSWORD") as String?
+
+            if (keystoreFile != null && keystorePassword != null && keyAlias != null && keyPassword != null) {
+                storeFile = file(keystoreFile)
+                storePassword = keystorePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword
+            }
+        }
     }
 
     buildTypes {
         release {
+            // Usar assinatura se configurada, senão gera AAB não assinado
+            // (Google Play Console pode assinar automaticamente se usar assinatura gerenciada)
+            val releaseSigningConfig = signingConfigs.findByName("release")
+            signingConfig = if (releaseSigningConfig?.storeFile?.exists() == true) {
+                releaseSigningConfig
+            } else {
+                null // Sem keystore: Google Play pode gerenciar assinatura automaticamente
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

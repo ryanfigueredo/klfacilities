@@ -1,27 +1,30 @@
-// Firebase Admin será inicializado apenas se necessário
-let firebaseAdmin: typeof import('firebase-admin') | null = null;
+// Firebase Admin será inicializado apenas se necessário (tipo evita resolução do módulo em build)
+let firebaseAdmin: { messaging: () => { sendEachForMulticast: (m: unknown) => Promise<{ successCount: number; failureCount: number; responses: { success: boolean }[] }> }; apps: { length: number }; initializeApp: (opts: unknown) => void; credential: { cert: (c: unknown) => unknown } } | null = null;
 
 async function getFirebaseAdmin() {
   if (firebaseAdmin) return firebaseAdmin;
-  
+
   try {
+    // @ts-expect-error firebase-admin pode não estar resolvido em todos os ambientes de build
     const adminModule = await import('firebase-admin');
     firebaseAdmin = adminModule;
-    
+
     if (!adminModule.apps.length) {
       const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
-      
+
       if (serviceAccount) {
         const serviceAccountJson = JSON.parse(serviceAccount);
         adminModule.initializeApp({
-          credential: adminModule.credential.cert(serviceAccountJson as adminModule.ServiceAccount),
+          credential: adminModule.credential.cert(serviceAccountJson),
         });
       } else {
-        console.warn('FIREBASE_SERVICE_ACCOUNT não configurado. Notificações push não funcionarão.');
+        console.warn(
+          'FIREBASE_SERVICE_ACCOUNT não configurado. Notificações push não funcionarão.'
+        );
         return null;
       }
     }
-    
+
     return firebaseAdmin;
   } catch (error) {
     console.error('Erro ao inicializar Firebase Admin:', error);
@@ -143,7 +146,7 @@ export async function sendPontoNotificationToSupervisorsPrisma(
     const title = 'Ponto Batido';
     const body = `${payload.funcionarioNome} acabou de bater ${tipoNome.toLowerCase()} no ${payload.unidadeNome}`;
 
-    const message: admin.messaging.MulticastMessage = {
+    const message = {
       notification: {
         title,
         body,

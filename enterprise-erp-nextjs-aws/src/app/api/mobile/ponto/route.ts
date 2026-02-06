@@ -303,7 +303,7 @@ export async function POST(req: NextRequest) {
             tipo: registro.tipo,
             timestamp: registro.timestamp.toISOString(),
             unidadeNome: unidade.nome,
-            protocolo: null,
+            protocolo: undefined,
           }
         ).catch(error => {
           console.error(
