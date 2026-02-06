@@ -64,7 +64,9 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.5.0")
 
     // Firebase Cloud Messaging
-    implementation(platform("com.google.firebase:firebase-bom:34.9.0"))
+    // Usando BOM 33.7.0 porque versões 34.x+ removeram módulos KTX
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    // Quando usar BoM, não especifique versões nas dependências abaixo
     implementation("com.google.firebase:firebase-messaging-ktx")
     implementation("com.google.firebase:firebase-analytics-ktx")
 

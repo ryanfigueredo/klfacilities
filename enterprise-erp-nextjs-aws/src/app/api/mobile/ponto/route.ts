@@ -118,14 +118,15 @@ export async function POST(req: NextRequest) {
     if (!funcionario) {
       const todosFuncionarios = await prisma.funcionario.findMany({
         where: { cpf: { not: null } },
-        include: { unidade: true },
+        include: { unidade: true, grupo: true },
       });
 
-      funcionario = todosFuncionarios.find(f => {
-        if (!f.cpf) return false;
-        const cpfBancoNormalizado = f.cpf.replace(/\D/g, '').trim();
-        return cpfBancoNormalizado === cpfNormalizado;
-      }) || null;
+      funcionario =
+        todosFuncionarios.find(f => {
+          if (!f.cpf) return false;
+          const cpfBancoNormalizado = f.cpf.replace(/\D/g, '').trim();
+          return cpfBancoNormalizado === cpfNormalizado;
+        }) || null;
     }
 
     if (!funcionario) {
@@ -168,11 +169,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Geofence OBRIGATÓRIO
-    if (
-      unidade.lat != null &&
-      unidade.lng != null &&
-      unidade.radiusM != null
-    ) {
+    if (unidade.lat != null && unidade.lng != null && unidade.radiusM != null) {
       const dist = haversine(
         Number(unidade.lat),
         Number(unidade.lng),
@@ -209,10 +206,7 @@ export async function POST(req: NextRequest) {
 
     // Validações de selfie (mesmas do sistema web)
     if (!selfie.type.startsWith('image/')) {
-      return NextResponse.json(
-        { error: 'Selfie inválida' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Selfie inválida' }, { status: 400 });
     }
     if (selfie.size > 2 * 1024 * 1024) {
       return NextResponse.json(
@@ -312,7 +306,10 @@ export async function POST(req: NextRequest) {
             protocolo: null,
           }
         ).catch(error => {
-          console.error('Erro ao enviar notificação FCM (não bloqueia registro):', error);
+          console.error(
+            'Erro ao enviar notificação FCM (não bloqueia registro):',
+            error
+          );
         });
       } catch (error) {
         // Não bloquear registro de ponto se falhar notificação
@@ -331,12 +328,15 @@ export async function POST(req: NextRequest) {
         },
       },
     });
-    
+
     // CORS headers
     response.headers.set('Access-Control-Allow-Origin', '*');
     response.headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    
+    response.headers.set(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization'
+    );
+
     return response;
   } catch (error: any) {
     console.error('Erro ao registrar ponto mobile:', error);
@@ -346,4 +346,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-
