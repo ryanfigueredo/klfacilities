@@ -5,7 +5,6 @@ async function getFirebaseAdmin() {
   if (firebaseAdmin) return firebaseAdmin;
 
   try {
-    // @ts-expect-error firebase-admin pode não estar resolvido em todos os ambientes de build
     const adminModule = await import('firebase-admin');
     firebaseAdmin = adminModule;
 

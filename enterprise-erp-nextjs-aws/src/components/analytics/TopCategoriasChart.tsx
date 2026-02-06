@@ -19,21 +19,18 @@ import { useMemo } from 'react';
 export function TopCategoriasChart() {
   const { filters, addFilter } = useAnalyticsFilters();
   const { data, isLoading, error } = useTopCategorias(filters, 10);
-  const items = data ?? [];
 
-  // Mantém original + cria rótulo curto só pra exibir no eixo
-  const chartData = useMemo(
-    () =>
-      items.map(item => ({
-        ...item,
-        categoriaOriginal: item.categoria,
-        categoriaLabel:
-          item.categoria.length > 20
-            ? item.categoria.slice(0, 20) + '…'
-            : item.categoria,
-      })),
-    [items]
-  );
+  const chartData = useMemo(() => {
+    const items = data ?? [];
+    return items.map(item => ({
+      ...item,
+      categoriaOriginal: item.categoria,
+      categoriaLabel:
+        item.categoria.length > 20
+          ? item.categoria.slice(0, 20) + '…'
+          : item.categoria,
+    }));
+  }, [data]);
 
   if (isLoading) {
     return (

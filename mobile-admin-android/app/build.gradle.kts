@@ -28,10 +28,16 @@ android {
             val keyPassword = project.findProperty("KEY_PASSWORD") as String?
 
             if (keystoreFile != null && keystorePassword != null && keyAlias != null && keyPassword != null) {
-                storeFile = file(keystoreFile)
-                storePassword = keystorePassword
-                this.keyAlias = keyAlias
-                this.keyPassword = keyPassword
+                // Usar rootProject.file() para buscar a keystore na raiz do projeto
+                val keystorePath = rootProject.file(keystoreFile)
+                if (keystorePath.exists()) {
+                    storeFile = keystorePath
+                    storePassword = keystorePassword
+                    this.keyAlias = keyAlias
+                    this.keyPassword = keyPassword
+                } else {
+                    println("WARNING: Keystore file not found: ${keystorePath.absolutePath}")
+                }
             }
         }
     }
