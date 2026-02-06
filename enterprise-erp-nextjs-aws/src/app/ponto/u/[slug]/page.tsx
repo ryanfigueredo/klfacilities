@@ -79,16 +79,19 @@ export default function PontoBySlugPage() {
       });
   }, [slug]);
 
+  const streamRef = useRef<MediaStream | null>(null);
   useEffect(() => {
+    let s: MediaStream | null = null;
     (async () => {
       try {
-        const s = await navigator.mediaDevices.getUserMedia({
+        s = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: 'user',
             width: { ideal: 640 },
             height: { ideal: 480 },
           },
         });
+        streamRef.current = s;
         setStream(s);
         if (videoRef.current) {
           videoRef.current.srcObject = s;
@@ -97,7 +100,8 @@ export default function PontoBySlugPage() {
       } catch {}
     })();
     return () => {
-      stream?.getTracks().forEach(t => t.stop());
+      streamRef.current?.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
     };
   }, []);
 

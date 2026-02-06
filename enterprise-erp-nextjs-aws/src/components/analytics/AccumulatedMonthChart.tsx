@@ -13,13 +13,17 @@ export default function AccumulatedMonthChart() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const grupoIdKey = JSON.stringify(filters.grupoId ?? []);
+  const unidadeIdKey = JSON.stringify(filters.unidadeId ?? []);
+  const categoriaKey = JSON.stringify(filters.categoria ?? []);
+  const tipoKey = JSON.stringify(filters.tipo ?? []);
+
   useEffect(() => {
     let active = true;
     (async () => {
       try {
         setLoading(true);
         const params = new URLSearchParams();
-        // Reutiliza filtros globais exceto tipo e competência; usamos dataLanc do mês atual selecionado
         if (filters.start) params.set('start', filters.start);
         if (filters.end) params.set('end', filters.end);
         (filters.grupoId || []).forEach(g => params.append('grupoId', g));
@@ -31,7 +35,6 @@ export default function AccumulatedMonthChart() {
         const j = await r.json();
         if (!active) return;
         const daily: Array<{ date: string; receitas: number; despesas: number }> = j.daily || [];
-        // Acumular
         let accR = 0;
         let accD = 0;
         const out = daily
@@ -51,7 +54,7 @@ export default function AccumulatedMonthChart() {
     return () => {
       active = false;
     };
-  }, [filters.start, filters.end, JSON.stringify(filters.grupoId), JSON.stringify(filters.unidadeId), JSON.stringify(filters.categoria), JSON.stringify(filters.tipo)]);
+  }, [filters.start, filters.end, filters.grupoId, filters.unidadeId, filters.categoria, filters.tipo, grupoIdKey, unidadeIdKey, categoriaKey, tipoKey]);
 
   return (
     <Card>
