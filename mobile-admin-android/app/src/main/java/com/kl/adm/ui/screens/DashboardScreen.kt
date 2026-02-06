@@ -17,7 +17,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,8 +51,7 @@ fun DashboardScreen(
     checklistRepository: ChecklistRepository? = null,
     onLogout: () -> Unit,
     onChecklists: () -> Unit,
-    onPontos: () -> Unit,
-    onChecklistBanheiros: () -> Unit = {}
+    onPontos: () -> Unit
 ) {
     var user by remember { mutableStateOf<AuthRepository.SavedUser?>(null) }
     var rascunhosCount by remember { mutableStateOf<Int?>(null) }
@@ -143,24 +141,6 @@ fun DashboardScreen(
                     Column {
                         Text("Pontos", style = MaterialTheme.typography.titleMedium)
                         Text("Visualizar e gerenciar registros de ponto", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 6.dp)
-                    .clickable { onChecklistBanheiros() },
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Row(modifier = Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.WaterDrop, contentDescription = null, modifier = Modifier.size(40.dp), tint = KLBlue)
-                    Spacer(modifier = Modifier.size(16.dp))
-                    Column {
-                        Text("Checklist Banheiros", style = MaterialTheme.typography.titleMedium)
-                        Text("Limpeza, insumos e satisfação", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

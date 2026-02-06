@@ -12,7 +12,6 @@ import com.kl.adm.ui.screens.ChecklistsScreen
 import com.kl.adm.ui.screens.DashboardScreen
 import com.kl.adm.ui.screens.LoginScreen
 import com.kl.adm.ui.screens.NovoChecklistScreen
-import com.kl.adm.ui.screens.ChecklistBanheirosScreen
 import com.kl.adm.ui.screens.PontosScreen
 
 sealed class Screen(val route: String) {
@@ -24,7 +23,6 @@ sealed class Screen(val route: String) {
         fun withId(escopoId: String) = "checklist/$escopoId"
     }
     data object Pontos : Screen("pontos")
-    data object ChecklistBanheiros : Screen("checklist_banheiros")
 }
 
 @Composable
@@ -51,8 +49,7 @@ fun KLAdminNavGraph(
                 checklistRepository = checklistRepo,
                 onLogout = { navController.navigate(Screen.Login.route) { popUpTo(0) { inclusive = true } } },
                 onChecklists = { navController.navigate(Screen.Checklists.route) },
-                onPontos = { navController.navigate(Screen.Pontos.route) },
-                onChecklistBanheiros = { navController.navigate(Screen.ChecklistBanheiros.route) }
+                onPontos = { navController.navigate(Screen.Pontos.route) }
             )
         }
         composable(Screen.Checklists.route) {
@@ -85,12 +82,6 @@ fun KLAdminNavGraph(
         composable(Screen.Pontos.route) {
             PontosScreen(
                 pontoRepository = pontoRepo,
-                onBack = { navController.popBackStack() }
-            )
-        }
-        composable(Screen.ChecklistBanheiros.route) {
-            ChecklistBanheirosScreen(
-                checklistRepository = checklistRepo,
                 onBack = { navController.popBackStack() }
             )
         }

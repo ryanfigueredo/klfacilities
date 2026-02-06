@@ -60,6 +60,15 @@ class ChecklistRepository {
         }
     }
 
+    suspend fun deleteRascunho(respostaId: String): Result<Unit> = runCatching {
+        api.deleteChecklistResposta(respostaId).let { r ->
+            if (!r.isSuccessful) {
+                val msg = r.errorBody()?.string() ?: r.message() ?: "Erro ao excluir rascunho"
+                throw Exception(msg)
+            }
+        }
+    }
+
     suspend fun unidadesBanheiros(): Result<ChecklistUnidadesResponse> = runCatching {
         api.checklistUnidades().let { r ->
             if (r.isSuccessful) r.body()!! else throw Exception(r.message() ?: "Erro ao carregar unidades")

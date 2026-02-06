@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -15,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -32,10 +34,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import com.kl.adm.data.model.ChecklistEscopo
 import com.kl.adm.data.model.RespostaConcluida
 import com.kl.adm.data.model.RespostaRascunho
@@ -55,6 +59,7 @@ fun ChecklistsScreen(
     var escopos by remember { mutableStateOf<List<ChecklistEscopo>>(emptyList()) }
     var rascunhos by remember { mutableStateOf<List<RespostaRascunho>>(emptyList()) }
     var respondidos by remember { mutableStateOf<List<RespostaConcluida>>(emptyList()) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         loading = true
@@ -153,11 +158,30 @@ fun ChecklistsScreen(
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
                                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                             ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Text(rascunho.template.titulo, style = MaterialTheme.typography.titleMedium)
-                                    Text(rascunho.unidade.nome, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    rascunho.grupo?.let { Text(it.nome, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                                    Text("Toque para continuar", style = MaterialTheme.typography.labelSmall, color = KLBlue, modifier = Modifier.padding(top = 4.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(rascunho.template.titulo, style = MaterialTheme.typography.titleMedium)
+                                        Text(rascunho.unidade.nome, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        rascunho.grupo?.let { Text(it.nome, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                        Text("Toque para continuar", style = MaterialTheme.typography.labelSmall, color = KLBlue, modifier = Modifier.padding(top = 4.dp))
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            scope.launch {
+                                                checklistRepository.deleteRascunho(rascunho.id).onSuccess {
+                                                    rascunhos = rascunhos.filter { it.id != rascunho.id }
+                                                }.onFailure { }
+                                            }
+                                        },
+                                        modifier = Modifier.padding(start = 8.dp)
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Excluir rascunho", tint = MaterialTheme.colorScheme.error)
+                                    }
                                 }
                             }
                         }

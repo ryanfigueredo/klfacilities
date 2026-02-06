@@ -1,5 +1,8 @@
 package com.kl.adm.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -46,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.kl.adm.data.model.ChecklistUnidadeItem
 import com.kl.adm.data.repository.ChecklistRepository
@@ -81,11 +85,20 @@ fun ChecklistBanheirosScreen(
     var fatores by remember { mutableStateOf(setOf<String>()) }
     var comentarios by remember { mutableStateOf("") }
     var fotoFile by remember { mutableStateOf<File?>(null) }
+    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
     var submitting by remember { mutableStateOf(false) }
     var success by remember { mutableStateOf(false) }
 
     val takePictureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (success) { /* fotoFile already set */ }
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted && pendingCameraUri != null) {
+            takePictureLauncher.launch(pendingCameraUri!!)
+            pendingCameraUri = null
+        } else {
+            pendingCameraUri = null
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -192,7 +205,12 @@ fun ChecklistBanheirosScreen(
                 IconButton(onClick = {
                     fotoFile = File(context.cacheDir, "banheiros_${System.currentTimeMillis()}.jpg")
                     val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", fotoFile!!)
-                    takePictureLauncher.launch(uri)
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                        takePictureLauncher.launch(uri)
+                    } else {
+                        pendingCameraUri = uri
+                        permissionLauncher.launch(Manifest.permission.CAMERA)
+                    }
                 }) {
                     Icon(Icons.Default.Camera, contentDescription = "Tirar foto")
                 }

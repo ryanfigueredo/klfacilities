@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -57,6 +58,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asAndroidPath
@@ -100,6 +103,7 @@ fun ChecklistDetailScreen(
     var rascunho by remember { mutableStateOf<RascunhoData?>(null) }
     var respostaId by remember { mutableStateOf<String?>(null) }
     val booleanAnswers = remember { mutableStateMapOf<String, Boolean>() }
+    val textAnswers = remember { mutableStateMapOf<String, String>() }
     val notaAnswers = remember { mutableStateMapOf<String, Int>() }
     val motivoNaoConformidade = remember { mutableStateMapOf<String, String>() }
     var optionalPhotoFiles by remember { mutableStateOf<Map<String, List<File>>>(emptyMap()) }
@@ -119,6 +123,7 @@ fun ChecklistDetailScreen(
         }.orEmpty() + ChecklistStep.Observacoes + ChecklistStep.Finalizar
     }
     val pathPoints = remember { mutableStateListOf<Offset>() }
+    var signatureBoxOrigin by remember { mutableStateOf(Offset.Zero) }
     val takePictureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (!success) return@rememberLauncherForActivityResult
         if (pendingPhotoPerguntaId != null && pendingPhotoFile != null) {
@@ -131,7 +136,7 @@ fun ChecklistDetailScreen(
             scope.launch {
                 saving = true
                 val esc = escopoDetail ?: return@launch
-                val answers = buildAnswers(esc, booleanAnswers.toMap(), notaAnswers.toMap(), motivoNaoConformidade.toMap())
+                val answers = buildAnswers(esc, booleanAnswers.toMap(), textAnswers.toMap(), notaAnswers.toMap(), motivoNaoConformidade.toMap())
                 val sigBase64 = pathToBase64(signaturePath)
                 val result = withContext(Dispatchers.IO) {
                     checklistRepository.submitResposta(
@@ -170,6 +175,7 @@ fun ChecklistDetailScreen(
                 observacoes = r.observacoes ?: ""
                 r.respostas.forEach { item ->
                     item.valorBoolean?.let { v -> booleanAnswers[item.perguntaId] = v }
+                    item.valorTexto?.let { v -> textAnswers[item.perguntaId] = v }
                     item.observacao?.let { v -> motivoNaoConformidade[item.perguntaId] = v }
                     item.nota?.toInt()?.let { n -> notaAnswers[item.perguntaId] = n }
                 }
@@ -221,6 +227,13 @@ fun ChecklistDetailScreen(
                             Card(Modifier.fillMaxWidth().weight(1f), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
                                 Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
                                     Text(s.grupo.titulo, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 8.dp))
+                                    if (s.pergunta.tipo == "TEXTO") {
+                                        TextQuestionField(
+                                            pergunta = s.pergunta,
+                                            textValue = textAnswers[s.pergunta.id] ?: "",
+                                            onTextChange = { textAnswers[s.pergunta.id] = it }
+                                        )
+                                    } else {
                                     QuestionField(
                                         pergunta = s.pergunta,
                                         conforme = booleanAnswers[s.pergunta.id],
@@ -255,6 +268,7 @@ fun ChecklistDetailScreen(
                                         notaValue = notaAnswers[s.pergunta.id],
                                         onNotaChange = { v -> if (v != null) notaAnswers[s.pergunta.id] = v else notaAnswers.remove(s.pergunta.id) }
                                     )
+                                    }
                                 }
                             }
                         }
@@ -276,24 +290,35 @@ fun ChecklistDetailScreen(
                                 Column(Modifier.padding(16.dp)) {
                                     Text("Assinatura do gerente", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
                                     Text("Desenhe abaixo e depois tire sua foto para identificar.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
-                                    Canvas(
+                                    Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(200.dp)
                                             .background(Color.White)
+                                            .onGloballyPositioned { coords ->
+                                                signatureBoxOrigin = coords.positionInRoot()
+                                            }
                                             .pointerInput(Unit) {
                                                 detectDragGestures(
-                                                    onDragStart = { offset -> pathPoints.add(offset) },
-                                                    onDrag = { _, offset -> pathPoints.add(offset) }
+                                                    onDragStart = { offset ->
+                                                        val local = Offset(offset.x - signatureBoxOrigin.x, offset.y - signatureBoxOrigin.y)
+                                                        pathPoints.add(local)
+                                                    },
+                                                    onDrag = { _, offset ->
+                                                        val local = Offset(offset.x - signatureBoxOrigin.x, offset.y - signatureBoxOrigin.y)
+                                                        pathPoints.add(local)
+                                                    }
                                                 )
                                             }
                                     ) {
-                                        if (pathPoints.isNotEmpty()) {
-                                            val p = Path().apply {
-                                                moveTo(pathPoints.first().x, pathPoints.first().y)
-                                                pathPoints.drop(1).forEach { lineTo(it.x, it.y) }
+                                        Canvas(Modifier.fillMaxSize()) {
+                                            if (pathPoints.isNotEmpty()) {
+                                                val p = Path().apply {
+                                                    moveTo(pathPoints.first().x, pathPoints.first().y)
+                                                    pathPoints.drop(1).forEach { lineTo(it.x, it.y) }
+                                                }
+                                                drawPath(p, Color.Black)
                                             }
-                                            drawPath(p, Color.Black)
                                         }
                                     }
                                     Spacer(Modifier.height(16.dp))
@@ -328,7 +353,7 @@ fun ChecklistDetailScreen(
                                 scope.launch {
                                     saving = true
                                     val esc = escopoDetail!!
-                                    val answers = buildAnswers(esc, booleanAnswers.toMap(), notaAnswers.toMap(), motivoNaoConformidade.toMap())
+                                    val answers = buildAnswers(esc, booleanAnswers.toMap(), textAnswers.toMap(), notaAnswers.toMap(), motivoNaoConformidade.toMap())
                                     withContext(Dispatchers.IO) {
                                         checklistRepository.submitResposta(escopoId = esc.escopo.id, answers = answers, observacoes = observacoes.ifBlank { null }, isDraft = true, respostaId = respostaId, optionalPhotoFiles = optionalPhotoFiles)
                                     }.onSuccess {
@@ -340,8 +365,8 @@ fun ChecklistDetailScreen(
                             }) { Text("Salvar rascunho") }
                         }
                         if (currentStep > 0) {
-                            Button(onClick = { currentStep-- }, modifier = Modifier.weight(1f), colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                                Text("Anterior")
+                            Button(onClick = { currentStep-- }, modifier = Modifier.weight(1f).widthIn(min = 96.dp), colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                                Text("Anterior", maxLines = 1)
                             }
                         }
                         when (step) {
@@ -351,7 +376,7 @@ fun ChecklistDetailScreen(
                                         scope.launch {
                                             saving = true
                                             val esc = escopoDetail!!
-                                            val answers = buildAnswers(esc, booleanAnswers.toMap(), notaAnswers.toMap(), motivoNaoConformidade.toMap())
+                                            val answers = buildAnswers(esc, booleanAnswers.toMap(), textAnswers.toMap(), notaAnswers.toMap(), motivoNaoConformidade.toMap())
                                             val sigBase64 = if (pathPoints.isNotEmpty()) {
                                                 val p = Path().apply { moveTo(pathPoints.first().x, pathPoints.first().y); pathPoints.drop(1).forEach { lineTo(it.x, it.y) } }
                                                 pathToBase64(p)
@@ -376,14 +401,34 @@ fun ChecklistDetailScreen(
                                     colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = KLBlue)
                                 ) { Text("Enviar relatório") }
                             }
-                            else -> Button(onClick = { currentStep++ }, modifier = Modifier.weight(1f), colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = KLBlue)) {
-                                Text("Próximo")
+                            else -> Button(onClick = { currentStep++ }, modifier = Modifier.weight(1f).widthIn(min = 96.dp), colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = KLBlue)) {
+                                Text("Próximo", maxLines = 1)
                             }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TextQuestionField(
+    pergunta: PerguntaDetalhe,
+    textValue: String,
+    onTextChange: (String) -> Unit
+) {
+    Column(Modifier.padding(vertical = 6.dp)) {
+        Text(pergunta.titulo, style = MaterialTheme.typography.bodyMedium)
+        Text("Conforme", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        Text("Informe o texto abaixo para constar no relatório (PDF):", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+        OutlinedTextField(
+            value = textValue,
+            onValueChange = onTextChange,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            minLines = 3,
+            placeholder = { Text("Digite aqui...") }
+        )
     }
 }
 
@@ -455,6 +500,7 @@ private fun FinalizeDialog(
     onDismiss: () -> Unit
 ) {
     val pathPoints = remember { mutableStateListOf<Offset>() }
+    var signatureBoxOrigin by remember { mutableStateOf(Offset.Zero) }
     Box(
         Modifier
             .fillMaxSize()
@@ -468,24 +514,35 @@ private fun FinalizeDialog(
                 .padding(16.dp)
         ) {
             Text("Assinatura do gerente", style = MaterialTheme.typography.titleMedium)
-            Canvas(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(200.dp)
                     .background(Color.White)
+                    .onGloballyPositioned { coords ->
+                        signatureBoxOrigin = coords.positionInRoot()
+                    }
                     .pointerInput(Unit) {
                         detectDragGestures(
-                            onDragStart = { offset -> pathPoints.add(offset) },
-                            onDrag = { _, offset -> pathPoints.add(offset) }
+                            onDragStart = { offset ->
+                                val local = Offset(offset.x - signatureBoxOrigin.x, offset.y - signatureBoxOrigin.y)
+                                pathPoints.add(local)
+                            },
+                            onDrag = { _, offset ->
+                                val local = Offset(offset.x - signatureBoxOrigin.x, offset.y - signatureBoxOrigin.y)
+                                pathPoints.add(local)
+                            }
                         )
                     }
             ) {
-                if (pathPoints.isNotEmpty()) {
-                    val p = Path().apply {
-                        moveTo(pathPoints.first().x, pathPoints.first().y)
-                        pathPoints.drop(1).forEach { lineTo(it.x, it.y) }
+                Canvas(Modifier.fillMaxSize()) {
+                    if (pathPoints.isNotEmpty()) {
+                        val p = Path().apply {
+                            moveTo(pathPoints.first().x, pathPoints.first().y)
+                            pathPoints.drop(1).forEach { lineTo(it.x, it.y) }
+                        }
+                        drawPath(p, Color.Black)
                     }
-                    drawPath(p, Color.Black)
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -525,18 +582,34 @@ private fun pathToBase64(path: Path): String? {
 private fun buildAnswers(
     esc: ChecklistEscopoDetalhesResponse,
     booleanAnswers: Map<String, Boolean>,
+    textAnswers: Map<String, String>,
     notaAnswers: Map<String, Int>,
     motivoNaoConformidade: Map<String, String>
 ): List<AnswerPayload> {
     return esc.escopo.template.grupos.flatMap { it.perguntas }.map { p ->
-        val conforme = booleanAnswers[p.id]
-        val motivo = if (conforme == false) motivoNaoConformidade[p.id].orEmpty().takeIf { it.isNotBlank() } else null
-        AnswerPayload(
-            perguntaId = p.id,
-            tipo = p.tipo,
-            valorBoolean = conforme,
-            observacao = motivo,
-            nota = notaAnswers[p.id]?.toDouble()
-        )
+        when (p.tipo) {
+            "TEXTO" -> {
+                val texto = textAnswers[p.id].orEmpty().trim().takeIf { it.isNotBlank() }
+                AnswerPayload(
+                    perguntaId = p.id,
+                    tipo = p.tipo,
+                    valorTexto = texto,
+                    valorBoolean = texto != null,
+                    observacao = null,
+                    nota = null
+                )
+            }
+            else -> {
+                val conforme = booleanAnswers[p.id]
+                val motivo = if (conforme == false) motivoNaoConformidade[p.id].orEmpty().takeIf { it.isNotBlank() } else null
+                AnswerPayload(
+                    perguntaId = p.id,
+                    tipo = p.tipo,
+                    valorBoolean = conforme,
+                    observacao = motivo,
+                    nota = notaAnswers[p.id]?.toDouble()
+                )
+            }
+        }
     }
 }

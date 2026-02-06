@@ -923,8 +923,10 @@ export async function generateChecklistPDF(
             yPos -= 14;
           } else if (pergunta.tipo === 'TEXTO') {
             const texto = respostaPergunta.valorTexto || 'Não informado';
+            const conformeLabel =
+              respostaPergunta.valorBoolean === true ? 'Conforme. ' : '';
             const textoLines = wrapText(
-              `Resposta: ${texto}`,
+              `Resposta: ${conformeLabel}${texto}`,
               contentWidth - 30,
               9,
               regularFont

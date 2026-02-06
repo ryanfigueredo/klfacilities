@@ -29,11 +29,11 @@ export async function getSupervisorScope(
     if (item.unidadeId) unidadeIdsDiretas.add(item.unidadeId);
   });
 
-  // Unidades: apenas as explicitamente vinculadas + unidades de grupos vinculados diretamente.
-  // Se o supervisor tem só unidades vinculadas (ex.: 8 lojas do Spani), NÃO expandir para
-  // todas as unidades do grupo — mostrar só as 8 lojas.
+  // Unidades: se o supervisor tem unidades explicitamente vinculadas, usar APENAS essas
+  // (checklists e pontos mostram só as lojas vinculadas). Se não tiver nenhuma unidade
+  // explícita, aí sim expandir grupos para todas as unidades do grupo.
   const unidadeIds = new Set<string>(unidadeIdsDiretas);
-  if (grupoIdsDiretos.size > 0) {
+  if (unidadeIdsDiretas.size === 0 && grupoIdsDiretos.size > 0) {
     const mappings = await prisma.mapeamentoGrupoUnidadeResponsavel.findMany({
       where: {
         grupoId: { in: Array.from(grupoIdsDiretos) },
