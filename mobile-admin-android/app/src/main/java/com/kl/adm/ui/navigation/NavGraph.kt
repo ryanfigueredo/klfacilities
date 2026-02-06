@@ -12,7 +12,9 @@ import com.kl.adm.ui.screens.ChecklistsScreen
 import com.kl.adm.ui.screens.DashboardScreen
 import com.kl.adm.ui.screens.LoginScreen
 import com.kl.adm.ui.screens.NovoChecklistScreen
+import com.kl.adm.ui.screens.PontoDetailScreen
 import com.kl.adm.ui.screens.PontosScreen
+import java.net.URLDecoder
 
 sealed class Screen(val route: String) {
     data object Login : Screen("login")
@@ -23,11 +25,21 @@ sealed class Screen(val route: String) {
         fun withId(escopoId: String) = "checklist/$escopoId"
     }
     data object Pontos : Screen("pontos")
+    data object PontoDetail : Screen("ponto_detail/{registroId}/{funcionarioNome}/{tipo}/{timestamp}/{unidadeNome}/{protocolo}") {
+        fun withData(
+            registroId: String,
+            funcionarioNome: String,
+            tipo: String,
+            timestamp: String,
+            unidadeNome: String,
+            protocolo: String?
+        ) = "ponto_detail/$registroId/${funcionarioNome.replace("/", "_")}/$tipo/${timestamp.replace("/", "_")}/${unidadeNome.replace("/", "_")}/${protocolo ?: "null"}"
+    }
 }
 
 @Composable
 fun KLAdminNavGraph(
-    navController: NavHostController = rememberNavController(),
+    navController: NavHostController,
     authRepository: AuthRepository
 ) {
     val checklistRepo = remember { com.kl.adm.data.repository.ChecklistRepository() }
@@ -81,6 +93,25 @@ fun KLAdminNavGraph(
         }
         composable(Screen.Pontos.route) {
             PontosScreen(
+                pontoRepository = pontoRepo,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Screen.PontoDetail.route) { backStackEntry ->
+            val registroId = backStackEntry.arguments?.getString("registroId") ?: return@composable
+            val funcionarioNome = URLDecoder.decode(backStackEntry.arguments?.getString("funcionarioNome") ?: "", "UTF-8")
+            val tipo = backStackEntry.arguments?.getString("tipo") ?: return@composable
+            val timestamp = URLDecoder.decode(backStackEntry.arguments?.getString("timestamp") ?: "", "UTF-8")
+            val unidadeNome = URLDecoder.decode(backStackEntry.arguments?.getString("unidadeNome") ?: "", "UTF-8")
+            val protocolo = backStackEntry.arguments?.getString("protocolo")?.takeIf { it != "null" }
+            
+            PontoDetailScreen(
+                registroId = registroId,
+                funcionarioNome = funcionarioNome,
+                tipo = tipo,
+                timestamp = timestamp,
+                unidadeNome = unidadeNome,
+                protocolo = protocolo,
                 pontoRepository = pontoRepo,
                 onBack = { navController.popBackStack() }
             )

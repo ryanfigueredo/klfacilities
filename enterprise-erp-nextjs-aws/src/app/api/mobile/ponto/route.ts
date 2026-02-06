@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { randomUUID, createHash } from 'crypto';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { logAudit } from '@/lib/audit/log';
+import { notifySupervisorsAboutPonto } from '@/lib/fcm';
 
 /**
  * OPTIONS /api/mobile/ponto
@@ -111,7 +112,7 @@ export async function POST(req: NextRequest) {
     // Buscar funcionário pelo CPF
     let funcionario = await prisma.funcionario.findFirst({
       where: { cpf: cpfNormalizado },
-      include: { unidade: true },
+      include: { unidade: true, grupo: true },
     });
 
     if (!funcionario) {
@@ -292,6 +293,32 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       url: '/api/mobile/ponto',
     });
+
+    // Enviar notificação apenas para supervisores que cuidam deste colaborador específico
+    if (funcionario.id && funcionario.nome) {
+      try {
+        // Enviar notificação apenas para supervisores que têm acesso ao funcionário
+        notifySupervisorsAboutPonto(
+          funcionario.id,
+          unidade.id,
+          funcionario.grupoId || null,
+          {
+            registroId: registro.id,
+            funcionarioId: funcionario.id,
+            funcionarioNome: funcionario.nome,
+            tipo: registro.tipo,
+            timestamp: registro.timestamp.toISOString(),
+            unidadeNome: unidade.nome,
+            protocolo: null,
+          }
+        ).catch(error => {
+          console.error('Erro ao enviar notificação FCM (não bloqueia registro):', error);
+        });
+      } catch (error) {
+        // Não bloquear registro de ponto se falhar notificação
+        console.error('Erro ao buscar supervisores para notificação:', error);
+      }
+    }
 
     const response = NextResponse.json({
       success: true,

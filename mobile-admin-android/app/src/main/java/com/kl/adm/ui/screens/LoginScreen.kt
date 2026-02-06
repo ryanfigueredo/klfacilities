@@ -28,12 +28,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import android.os.Build
+import com.google.firebase.messaging.FirebaseMessaging
 import com.kl.adm.data.api.ApiModule
 import com.kl.adm.data.model.AuthRequest
 import com.kl.adm.data.repository.AuthRepository
+import com.kl.adm.data.repository.NotificationRepository
 import com.kl.adm.ui.theme.KLBlue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -112,6 +116,25 @@ fun LoginScreen(
                             if (res.isSuccessful && res.body() != null) {
                                 val body = res.body()!!
                                 authRepository.saveAuth(body.token, body.user.id, body.user.name, body.user.email, body.user.role)
+                                
+                                // Registrar token FCM após login bem-sucedido
+                                try {
+                                    val fcmToken = FirebaseMessaging.getInstance().token.await()
+                                    val notificationRepo = NotificationRepository()
+                                    val deviceId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                        android.provider.Settings.Secure.getString(
+                                            LocalContext.current.contentResolver,
+                                            android.provider.Settings.Secure.ANDROID_ID
+                                        )
+                                    } else {
+                                        null
+                                    }
+                                    notificationRepo.registerToken(fcmToken, deviceId)
+                                } catch (e: Exception) {
+                                    // Não bloquear login se falhar registro do token
+                                    android.util.Log.e("LoginScreen", "Erro ao registrar token FCM", e)
+                                }
+                                
                                 true
                             } else {
                                 res.errorBody()?.string() ?: "Erro ao fazer login"

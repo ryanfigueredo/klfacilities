@@ -65,4 +65,8 @@ interface ApiService {
 
     @POST("/api/ponto/supervisor/adicionar")
     suspend fun adicionarPonto(@Body body: com.kl.adm.data.model.AdicionarPontoRequest): Response<com.kl.adm.data.model.AdicionarPontoResponse>
+
+    // FCM Token Registration
+    @POST("/api/mobile/fcm/register")
+    suspend fun registerFcmToken(@Body body: com.kl.adm.data.model.RegisterFcmTokenRequest): Response<com.kl.adm.data.model.RegisterFcmTokenResponse>
 }

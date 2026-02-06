@@ -5,6 +5,7 @@ import { randomUUID, createHash } from 'crypto';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { logAudit } from '@/lib/audit/log';
 import { isUniversalQRCode } from '@/lib/ponto-universal';
+import { notifySupervisorsAboutPonto } from '@/lib/fcm';
 
 const s3 = new S3Client({
   region: process.env.AWS_REGION,
@@ -547,6 +548,38 @@ export async function POST(req: NextRequest) {
       cpf: cpf ? cpf.replace(/\d(?=\d{4})/g, '*') : null, // Mascarar CPF parcialmente
     },
   });
+
+  // Enviar notificação apenas para supervisores que cuidam deste colaborador específico
+  if (funcionarioId && funcionarioNome) {
+    try {
+      // Buscar funcionário completo para pegar grupoId
+      const funcionarioCompleto = await prisma.funcionario.findUnique({
+        where: { id: funcionarioId },
+        select: { grupoId: true },
+      });
+
+      // Enviar notificação apenas para supervisores que têm acesso ao funcionário
+      notifySupervisorsAboutPonto(
+        funcionarioId,
+        unidade.id,
+        funcionarioCompleto?.grupoId || null,
+        {
+          registroId: created.id,
+          funcionarioId: funcionarioId,
+          funcionarioNome: funcionarioNome,
+          tipo,
+          timestamp: now.toISOString(),
+          unidadeNome: unidade.nome,
+          protocolo,
+        }
+      ).catch(error => {
+        console.error('Erro ao enviar notificação FCM (não bloqueia registro):', error);
+      });
+    } catch (error) {
+      // Não bloquear registro de ponto se falhar notificação
+      console.error('Erro ao buscar supervisores para notificação:', error);
+    }
+  }
 
   return NextResponse.json({
     ok: true,

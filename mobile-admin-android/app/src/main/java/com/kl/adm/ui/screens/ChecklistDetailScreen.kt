@@ -58,8 +58,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asAndroidPath
@@ -117,13 +115,12 @@ fun ChecklistDetailScreen(
     var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     var currentStep by remember { mutableStateOf(0) }
+    val pathPoints = remember { mutableStateListOf<Offset>() }
     val steps = remember(escopoDetail) {
         escopoDetail?.escopo?.template?.grupos?.sortedBy { it.ordem }?.flatMap { grupo ->
             grupo.perguntas.sortedBy { it.ordem }.map { ChecklistStep.Pergunta(grupo, it) }
         }.orEmpty() + ChecklistStep.Observacoes + ChecklistStep.Finalizar
     }
-    val pathPoints = remember { mutableStateListOf<Offset>() }
-    var signatureBoxOrigin by remember { mutableStateOf(Offset.Zero) }
     val takePictureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (!success) return@rememberLauncherForActivityResult
         if (pendingPhotoPerguntaId != null && pendingPhotoFile != null) {
@@ -295,18 +292,13 @@ fun ChecklistDetailScreen(
                                             .fillMaxWidth()
                                             .height(200.dp)
                                             .background(Color.White)
-                                            .onGloballyPositioned { coords ->
-                                                signatureBoxOrigin = coords.positionInRoot()
-                                            }
                                             .pointerInput(Unit) {
                                                 detectDragGestures(
                                                     onDragStart = { offset ->
-                                                        val local = Offset(offset.x - signatureBoxOrigin.x, offset.y - signatureBoxOrigin.y)
-                                                        pathPoints.add(local)
+                                                        pathPoints.add(offset)
                                                     },
                                                     onDrag = { _, offset ->
-                                                        val local = Offset(offset.x - signatureBoxOrigin.x, offset.y - signatureBoxOrigin.y)
-                                                        pathPoints.add(local)
+                                                        pathPoints.add(offset)
                                                     }
                                                 )
                                             }
@@ -500,7 +492,6 @@ private fun FinalizeDialog(
     onDismiss: () -> Unit
 ) {
     val pathPoints = remember { mutableStateListOf<Offset>() }
-    var signatureBoxOrigin by remember { mutableStateOf(Offset.Zero) }
     Box(
         Modifier
             .fillMaxSize()
@@ -519,18 +510,13 @@ private fun FinalizeDialog(
                     .fillMaxWidth()
                     .height(200.dp)
                     .background(Color.White)
-                    .onGloballyPositioned { coords ->
-                        signatureBoxOrigin = coords.positionInRoot()
-                    }
                     .pointerInput(Unit) {
                         detectDragGestures(
                             onDragStart = { offset ->
-                                val local = Offset(offset.x - signatureBoxOrigin.x, offset.y - signatureBoxOrigin.y)
-                                pathPoints.add(local)
+                                pathPoints.add(offset)
                             },
                             onDrag = { _, offset ->
-                                val local = Offset(offset.x - signatureBoxOrigin.x, offset.y - signatureBoxOrigin.y)
-                                pathPoints.add(local)
+                                pathPoints.add(offset)
                             }
                         )
                     }
