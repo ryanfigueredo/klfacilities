@@ -51,7 +51,6 @@ function PageInner() {
   const { data: session } = useSession();
   const canView = hasRouteAccess(session?.user?.role as any, [
     'MASTER',
-    'ADMIN',
     'RH',
   ]);
   const sp = useSearchParams();

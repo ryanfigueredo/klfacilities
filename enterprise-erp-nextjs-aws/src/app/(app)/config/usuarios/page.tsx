@@ -52,6 +52,7 @@ import {
   ChevronDown,
   AlertTriangle,
   Calendar,
+  RefreshCw,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -339,6 +340,46 @@ export default function UsuariosPage() {
     }
   };
 
+  const handleActivate = async (id: string) => {
+    try {
+      const response = await fetch(`/api/usuarios/${id}/ativar`, {
+        method: 'PATCH',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erro ao reativar');
+      }
+
+      toast.success('Usuário reativado com sucesso');
+      fetchUsers();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Erro ao reativar usuário'
+      );
+    }
+  };
+
+  const handleRemoveUnidadesVinculos = async (userId: string, userEmail: string) => {
+    try {
+      const response = await fetch(`/api/usuarios/${userId}/remover-vinculos-unidades`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erro ao remover vínculos');
+      }
+
+      const data = await response.json();
+      toast.success(`Vínculos de unidades removidos com sucesso (${data.vinculosRemovidos} removidos)`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Erro ao remover vínculos de unidades'
+      );
+    }
+  };
+
   const handleEdit = (item: User) => {
     setEditingItem(item);
     setValueUpdate('name', item.name);
@@ -489,6 +530,7 @@ export default function UsuariosPage() {
               <TableBody>
                 {sortedUsers.map(item => {
                   const isLuciano = item.email === 'luciano@kl.com.br';
+                  const isGivaldo = item.email === 'givaldo.paixao@klfacilities.com.br';
                   const _count = item._count || { movimentos: 0, auditLogs: 0 };
                   const hasReferences = _count.movimentos > 0;
                   const auditoriaCount = _count.auditLogs ?? 0;
@@ -528,6 +570,52 @@ export default function UsuariosPage() {
                       {canEdit && (
                         <TableCell>
                           <div className="flex gap-2">
+                            {!item.ativo && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleActivate(item.id)}
+                                disabled={isLuciano}
+                                title="Reativar usuário"
+                              >
+                                <RefreshCw className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {isGivaldo && (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    title="Remover vínculos de unidades"
+                                  >
+                                    <Trash2 className="h-4 w-4 text-orange-500" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>
+                                      Remover Vínculos de Unidades
+                                    </AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Tem certeza que deseja remover todos os vínculos de unidades do usuário &quot;{item.name}&quot; ({item.email})?
+                                      <br />
+                                      <br />
+                                      Esta ação removerá todas as vinculações de unidades deste supervisor, mas manterá os vínculos de grupos.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => handleRemoveUnidadesVinculos(item.id, item.email)}
+                                      className="bg-orange-500 hover:bg-orange-600"
+                                    >
+                                      Remover Vínculos
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
                             <Button
                               variant="outline"
                               size="sm"
@@ -544,16 +632,17 @@ export default function UsuariosPage() {
                             >
                               <Key className="h-4 w-4" />
                             </Button>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  disabled={isLuciano || hasReferences}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </AlertDialogTrigger>
+                            {item.ativo && (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={isLuciano || hasReferences}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </AlertDialogTrigger>
                               <AlertDialogContent a11yTitle="Confirmar exclusão">
                                 <AlertDialogHeader>
                                   <AlertDialogTitle>
@@ -621,6 +710,7 @@ export default function UsuariosPage() {
                                 </AlertDialogFooter>
                               </AlertDialogContent>
                             </AlertDialog>
+                            )}
                           </div>
                         </TableCell>
                       )}

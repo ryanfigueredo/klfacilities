@@ -225,7 +225,6 @@ export const appNavSections: NavSection[] = [
         label: 'Colaboradores',
         roles: [
           'MASTER',
-          'ADMIN',
           'RH',
           'OPERACIONAL',
           'PLANEJAMENTO_ESTRATEGICO',
@@ -234,14 +233,13 @@ export const appNavSections: NavSection[] = [
       {
         href: '/rh/crachas',
         label: 'Crachás',
-        roles: ['MASTER', 'ADMIN', 'RH', 'PLANEJAMENTO_ESTRATEGICO'],
+        roles: ['MASTER', 'RH', 'PLANEJAMENTO_ESTRATEGICO'],
       },
       {
         href: '/rh/banco-talentos',
         label: 'Banco de Talentos',
         roles: [
           'MASTER',
-          'ADMIN',
           'RH',
           'OPERACIONAL',
           'SUPERVISOR',
@@ -253,7 +251,6 @@ export const appNavSections: NavSection[] = [
         label: 'Central de Atendimento',
         roles: [
           'MASTER',
-          'ADMIN',
           'RH',
           'OPERACIONAL',
           'PLANEJAMENTO_ESTRATEGICO',

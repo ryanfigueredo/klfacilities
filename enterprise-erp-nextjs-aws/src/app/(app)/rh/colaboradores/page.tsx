@@ -62,18 +62,16 @@ type Row = {
 
 function PageInner() {
   const { data: session } = useSession();
-  // MASTER tem acesso total, ADMIN e RH podem gerenciar colaboradores
+  // MASTER tem acesso total, RH pode gerenciar colaboradores
   const canView = hasRouteAccess(session?.user?.role as any, [
     'MASTER',
-    'ADMIN',
     'RH',
     'OPERACIONAL',
   ]);
   const canEdit = hasRouteAccess(session?.user?.role as any, [
     'MASTER',
-    'ADMIN',
     'RH',
-  ]); // MASTER e ADMIN podem criar/editar, RH também
+  ]); // MASTER e RH podem criar/editar
   const sp = useSearchParams();
   const router = useRouter();
 

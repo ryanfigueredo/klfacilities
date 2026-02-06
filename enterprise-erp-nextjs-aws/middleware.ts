@@ -287,6 +287,10 @@ export async function middleware(req: NextRequest) {
       '/ponto/', // Ponto Digital
       '/administracao/', // Administração (mensagens, emails)
       '/auditoria', // Auditoria
+      '/rh/colaboradores', // Colaboradores - apenas MASTER
+      '/rh/crachas', // Crachás - apenas MASTER
+      '/rh/banco-talentos', // Banco de Talentos - apenas MASTER
+      '/rh/central-atendimento', // Central de Atendimento - apenas MASTER
     ];
 
     // Verificar se está tentando acessar rota bloqueada

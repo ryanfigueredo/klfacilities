@@ -19,9 +19,6 @@ import ChecklistsScreen from "./src/screens/ChecklistsScreen";
 import NovoChecklistScreen from "./src/screens/NovoChecklistScreen";
 import ResponderChecklistScreen from "./src/screens/ResponderChecklistScreen";
 import WebViewScreen from "./src/screens/WebViewScreen";
-import BancoTalentosScreen from "./src/screens/BancoTalentosScreen";
-import IncidentesScreen from "./src/screens/IncidentesScreen";
-import AvaliacoesScreen from "./src/screens/AvaliacoesScreen";
 import ProtocoloScreen from "./src/screens/ProtocoloScreen";
 import ChecklistBanheirosScreen from "./src/screens/ChecklistBanheirosScreen";
 import VisualizarChecklistRespondidoScreen from "./src/screens/VisualizarChecklistRespondidoScreen";
@@ -226,15 +223,6 @@ function AppContent() {
           </Stack.Screen>
           <Stack.Screen name="WebView">
             {() => <WebViewScreen />}
-          </Stack.Screen>
-          <Stack.Screen name="BancoTalentos">
-            {() => <BancoTalentosScreen />}
-          </Stack.Screen>
-          <Stack.Screen name="Incidentes">
-            {() => <IncidentesScreen />}
-          </Stack.Screen>
-          <Stack.Screen name="Avaliacoes">
-            {() => <AvaliacoesScreen />}
           </Stack.Screen>
           <Stack.Screen name="Protocolo">
             {() => <ProtocoloScreen />}

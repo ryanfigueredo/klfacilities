@@ -200,11 +200,8 @@ O app suporta trabalho offline:
 - Exportar folhas de ponto
 - Protocolos de ponto
 
-### Outras Funcionalidades
-- Banco de Talentos
-- Incidentes
-- Avaliações
-- Checklist Digital (Banheiros)
+### Checklist Digital (Banheiros)
+- Checklist de banheiros (unidades, insumos, satisfação)
 
 ## 🐛 Debugging
 

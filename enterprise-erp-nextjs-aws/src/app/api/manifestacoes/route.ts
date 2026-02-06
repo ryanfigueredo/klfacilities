@@ -62,8 +62,8 @@ export async function GET(req: NextRequest) {
     }
 
     const userRole = session.user.role;
-    // MASTER, ADMIN, RH e OPERACIONAL podem acessar manifestações
-    if (!['MASTER', 'ADMIN', 'RH', 'OPERACIONAL'].includes(userRole)) {
+    // MASTER, RH e OPERACIONAL podem acessar manifestações
+    if (!['MASTER', 'RH', 'OPERACIONAL'].includes(userRole)) {
       return NextResponse.json({ error: 'Sem permissão' }, { status: 403 });
     }
 

@@ -3,7 +3,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getSupervisorScope } from '@/lib/supervisor-scope';
 
-// GET - Listar currículos (apenas RH, ADMIN, OPERACIONAL e SUPERVISOR)
+// GET - Listar currículos (apenas RH, OPERACIONAL e SUPERVISOR)
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser(request);
@@ -11,8 +11,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    // MASTER, ADMIN, RH, OPERACIONAL e SUPERVISOR podem acessar banco de talentos
-    if (!['MASTER', 'ADMIN', 'RH', 'OPERACIONAL', 'SUPERVISOR'].includes(user.role)) {
+    // MASTER, RH, OPERACIONAL e SUPERVISOR podem acessar banco de talentos
+    if (!['MASTER', 'RH', 'OPERACIONAL', 'SUPERVISOR'].includes(user.role)) {
       console.error('GET /api/curriculos: Role inválida', user.role);
       return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
     }
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Criar currículo manualmente (apenas RH, ADMIN e OPERACIONAL)
+// POST - Criar currículo manualmente (apenas RH e OPERACIONAL)
 export async function POST(request: NextRequest) {
   try {
     const user = await getCurrentUser(request);
@@ -93,8 +93,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    // MASTER, ADMIN, RH e OPERACIONAL podem criar currículos
-    if (!user || !['MASTER', 'ADMIN', 'RH', 'OPERACIONAL'].includes(user.role)) {
+    // MASTER, RH e OPERACIONAL podem criar currículos
+    if (!user || !['MASTER', 'RH', 'OPERACIONAL'].includes(user.role)) {
       return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
     }
 
