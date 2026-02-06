@@ -3,14 +3,11 @@ package com.kl.adm.ui.screens
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.Paint
 import android.net.Uri
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,7 +45,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
@@ -56,15 +52,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.asAndroidPath
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.kl.adm.ui.views.SignatureView
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.kl.adm.data.model.AnswerPayload
@@ -107,15 +99,13 @@ fun ChecklistDetailScreen(
     var optionalPhotoFiles by remember { mutableStateOf<Map<String, List<File>>>(emptyMap()) }
     var observacoes by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
-    var showFinalizeDialog by remember { mutableStateOf(false) }
-    var signaturePath by remember { mutableStateOf(Path()) }
+    var signatureViewRef by remember { mutableStateOf<SignatureView?>(null) }
     var selfieFile by remember { mutableStateOf<File?>(null) }
     var pendingPhotoPerguntaId by remember { mutableStateOf<String?>(null) }
     var pendingPhotoFile by remember { mutableStateOf<File?>(null) }
     var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     var currentStep by remember { mutableStateOf(0) }
-    val pathPoints = remember { mutableStateListOf<Offset>() }
     val steps = remember(escopoDetail) {
         escopoDetail?.escopo?.template?.grupos?.sortedBy { it.ordem }?.flatMap { grupo ->
             grupo.perguntas.sortedBy { it.ordem }.map { ChecklistStep.Pergunta(grupo, it) }
@@ -129,12 +119,11 @@ fun ChecklistDetailScreen(
             pendingPhotoPerguntaId = null
             pendingPhotoFile = null
         } else if (selfieFile != null) {
-            showFinalizeDialog = false
             scope.launch {
                 saving = true
                 val esc = escopoDetail ?: return@launch
                 val answers = buildAnswers(esc, booleanAnswers.toMap(), textAnswers.toMap(), notaAnswers.toMap(), motivoNaoConformidade.toMap())
-                val sigBase64 = pathToBase64(signaturePath)
+                val sigBase64 = signatureViewRef?.takeIf { it.hasSignature() }?.getSignatureBitmap()?.let { bitmapToBase64(it) }
                 val result = withContext(Dispatchers.IO) {
                     checklistRepository.submitResposta(
                         escopoId = esc.escopo.id,
@@ -287,42 +276,22 @@ fun ChecklistDetailScreen(
                                 Column(Modifier.padding(16.dp)) {
                                     Text("Assinatura do gerente", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
                                     Text("Desenhe abaixo e depois tire sua foto para identificar.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
-                                    Box(
+                                    AndroidView(
+                                        factory = { ctx -> SignatureView(ctx) },
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(200.dp)
-                                            .background(Color.White)
-                                            .pointerInput(Unit) {
-                                                detectDragGestures(
-                                                    onDragStart = { offset ->
-                                                        pathPoints.add(offset)
-                                                    },
-                                                    onDrag = { _, offset ->
-                                                        pathPoints.add(offset)
-                                                    }
-                                                )
-                                            }
-                                    ) {
-                                        Canvas(Modifier.fillMaxSize()) {
-                                            if (pathPoints.isNotEmpty()) {
-                                                val p = Path().apply {
-                                                    moveTo(pathPoints.first().x, pathPoints.first().y)
-                                                    pathPoints.drop(1).forEach { lineTo(it.x, it.y) }
-                                                }
-                                                drawPath(p, Color.Black)
-                                            }
+                                            .background(Color.White),
+                                        update = { signatureViewRef = it }
+                                    )
+                                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        androidx.compose.material3.TextButton(onClick = { signatureViewRef?.clearCanvas() }) {
+                                            Text("Limpar assinatura")
                                         }
                                     }
                                     Spacer(Modifier.height(16.dp))
                                     Button(
                                         onClick = {
-                                            if (pathPoints.isNotEmpty()) {
-                                                val p = Path().apply {
-                                                    moveTo(pathPoints.first().x, pathPoints.first().y)
-                                                    pathPoints.drop(1).forEach { lineTo(it.x, it.y) }
-                                                }
-                                                signaturePath = p
-                                            }
                                             selfieFile = File(context.cacheDir, "selfie_${System.currentTimeMillis()}.jpg")
                                             val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", selfieFile!!)
                                             if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
@@ -369,10 +338,7 @@ fun ChecklistDetailScreen(
                                             saving = true
                                             val esc = escopoDetail!!
                                             val answers = buildAnswers(esc, booleanAnswers.toMap(), textAnswers.toMap(), notaAnswers.toMap(), motivoNaoConformidade.toMap())
-                                            val sigBase64 = if (pathPoints.isNotEmpty()) {
-                                                val p = Path().apply { moveTo(pathPoints.first().x, pathPoints.first().y); pathPoints.drop(1).forEach { lineTo(it.x, it.y) } }
-                                                pathToBase64(p)
-                                            } else null
+                                            val sigBase64 = signatureViewRef?.takeIf { it.hasSignature() }?.getSignatureBitmap()?.let { bitmapToBase64(it) }
                                             withContext(Dispatchers.IO) {
                                                     checklistRepository.submitResposta(
                                                         escopoId = esc.escopo.id,
@@ -484,81 +450,8 @@ private fun QuestionField(
     }
 }
 
-@Composable
-private fun FinalizeDialog(
-    signaturePath: Path,
-    onSignatureChange: (Path) -> Unit,
-    onConfirmSignature: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    val pathPoints = remember { mutableStateListOf<Offset>() }
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
-            .padding(24.dp)
-    ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium)
-                .padding(16.dp)
-        ) {
-            Text("Assinatura do gerente", style = MaterialTheme.typography.titleMedium)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp)
-                    .background(Color.White)
-                    .pointerInput(Unit) {
-                        detectDragGestures(
-                            onDragStart = { offset ->
-                                pathPoints.add(offset)
-                            },
-                            onDrag = { _, offset ->
-                                pathPoints.add(offset)
-                            }
-                        )
-                    }
-            ) {
-                Canvas(Modifier.fillMaxSize()) {
-                    if (pathPoints.isNotEmpty()) {
-                        val p = Path().apply {
-                            moveTo(pathPoints.first().x, pathPoints.first().y)
-                            pathPoints.drop(1).forEach { lineTo(it.x, it.y) }
-                        }
-                        drawPath(p, Color.Black)
-                    }
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                Button(onClick = onDismiss) { Text("Cancelar") }
-                Spacer(Modifier.size(8.dp))
-                Button(onClick = {
-                    if (pathPoints.isNotEmpty()) {
-                        val p = Path().apply {
-                            moveTo(pathPoints.first().x, pathPoints.first().y)
-                            pathPoints.drop(1).forEach { lineTo(it.x, it.y) }
-                        }
-                        onSignatureChange(p)
-                    }
-                    onConfirmSignature()
-                }) { Text("Continuar (selfie)") }
-            }
-        }
-    }
-}
-
-private fun pathToBase64(path: Path): String? {
+private fun bitmapToBase64(bitmap: Bitmap): String? {
     return try {
-        val w = 400
-        val h = 200
-        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val canvas = android.graphics.Canvas(bitmap)
-        canvas.drawColor(android.graphics.Color.WHITE)
-        val paint = Paint().apply { color = android.graphics.Color.BLACK; strokeWidth = 4f; isAntiAlias = true; style = Paint.Style.STROKE }
-        canvas.drawPath(path.asAndroidPath(), paint)
         val baos = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.JPEG, 80, baos)
         "data:image/jpeg;base64," + Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
