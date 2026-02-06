@@ -42,21 +42,20 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user || !user.password) {
-      // Log de tentativa de login falhada
       try {
         await logLogin(
-          'unknown',
+          null,
           email,
           'unknown',
           request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-          'mobile-admin',
+          request.headers.get('user-agent') || 'mobile-admin',
           false,
           'Usuário não encontrado'
         );
       } catch (error) {
         console.error('Erro ao logar tentativa de login:', error);
       }
-      
+
       return NextResponse.json(
         { error: 'Email ou senha incorretos' },
         { status: 401 }

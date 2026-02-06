@@ -321,7 +321,7 @@ export async function logGrupoCreated(
 }
 
 export async function logLogin(
-  userId: string,
+  userId: string | null | undefined,
   userEmail: string,
   userRole: string,
   ip: string,
@@ -337,8 +337,8 @@ export async function logLogin(
     await logAudit({
       action: 'user.login',
       resource: 'User',
-      resourceId: userId,
-      userId,
+      resourceId: userId ?? undefined,
+      userId: userId && userId !== 'unknown' ? userId : undefined,
       userEmail,
       userRole,
       success,
@@ -353,9 +353,8 @@ export async function logLogin(
         userRole,
       },
     });
-  } catch (error) {
-    console.error('Erro ao logar login:', error);
-    // Não re-throw o erro para não quebrar a autenticação
+  } catch (err) {
+    console.error('Erro ao logar login:', err);
   }
 }
 

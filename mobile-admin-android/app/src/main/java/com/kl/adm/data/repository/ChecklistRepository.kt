@@ -1,5 +1,7 @@
 package com.kl.adm.data.repository
 
+import android.graphics.BitmapFactory
+import android.graphics.Bitmap
 import com.google.gson.Gson
 import com.kl.adm.data.api.ApiConfig
 import com.kl.adm.data.api.ApiModule
@@ -17,6 +19,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
+import java.io.FileOutputStream
 
 class ChecklistRepository {
 
@@ -111,18 +114,20 @@ class ChecklistRepository {
         accuracy?.let { builder.addFormDataPart("accuracy", it.toString()) }
         assinaturaGerenteDataUrl?.let { builder.addFormDataPart("assinaturaGerenteDataUrl", it) }
         selfieFile?.let { file ->
+            val body = compressImageForUpload(file) ?: file
             builder.addFormDataPart(
                 "assinaturaFoto",
-                file.name,
-                file.asRequestBody("image/jpeg".toMediaType())
+                body.name,
+                body.asRequestBody("image/jpeg".toMediaType())
             )
         }
         optionalPhotoFiles.forEach { (perguntaId, files) ->
             files.forEachIndexed { index, file ->
+                val body = compressImageForUpload(file) ?: file
                 builder.addFormDataPart(
                     "foto_anexada_${perguntaId}_$index",
-                    file.name,
-                    file.asRequestBody("image/jpeg".toMediaType())
+                    body.name,
+                    body.asRequestBody("image/jpeg".toMediaType())
                 )
             }
         }
@@ -135,6 +140,36 @@ class ChecklistRepository {
         if (!response.isSuccessful) {
             val errBody = response.body?.string() ?: response.message
             throw Exception(errBody)
+        }
+    }
+
+    /**
+     * Comprime imagem para upload (evita 413 Request Entity Too Large).
+     * Redimensiona para no máximo 1200px no lado maior e JPEG qualidade 72%.
+     */
+    private fun compressImageForUpload(source: File): File? {
+        return try {
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(source.absolutePath, opts)
+            val w = opts.outWidth
+            val h = opts.outHeight
+            if (w <= 0 || h <= 0) return source
+            val maxSide = 1200
+            val sampleSize = when {
+                w <= maxSide && h <= maxSide -> 1
+                w >= h -> (w / maxSide).coerceAtLeast(1)
+                else -> (h / maxSide).coerceAtLeast(1)
+            }
+            val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            val bitmap = BitmapFactory.decodeFile(source.absolutePath, decodeOpts) ?: return source
+            val out = File.createTempFile("upload_", ".jpg")
+            FileOutputStream(out).use { fos ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 72, fos)
+            }
+            if (!bitmap.isRecycled) bitmap.recycle()
+            out
+        } catch (_: Exception) {
+            source
         }
     }
 
