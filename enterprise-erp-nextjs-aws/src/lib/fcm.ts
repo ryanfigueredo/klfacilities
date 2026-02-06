@@ -1,11 +1,10 @@
-// Firebase Admin será inicializado apenas se necessário (tipo evita resolução do módulo em build)
-let firebaseAdmin: { messaging: () => { sendEachForMulticast: (m: unknown) => Promise<{ successCount: number; failureCount: number; responses: { success: boolean }[] }> }; apps: { length: number }; initializeApp: (opts: unknown) => void; credential: { cert: (c: unknown) => unknown } } | null = null;
+// Firebase Admin: tipo any para funcionar tanto quando o módulo está instalado (Vercel) quanto quando não está
+let firebaseAdmin: unknown = null;
 
-async function getFirebaseAdmin() {
+async function getFirebaseAdmin(): Promise<unknown> {
   if (firebaseAdmin) return firebaseAdmin;
 
   try {
-    // @ts-ignore - firebase-admin pode não estar resolvido em alguns ambientes de build
     const adminModule = await import('firebase-admin');
     firebaseAdmin = adminModule;
 
@@ -126,14 +125,18 @@ export async function sendPontoNotificationToSupervisorsPrisma(
   supervisorIds: string[]
 ): Promise<void> {
   const admin = await getFirebaseAdmin();
-  
+
   if (!admin) {
     console.warn('Firebase Admin não inicializado. Pulando envio de notificação.');
     return;
   }
 
+  type AdminLike = {
+    messaging: () => { sendEachForMulticast: (m: unknown) => Promise<{ successCount: number; failureCount: number; responses: { success: boolean }[] }> };
+  };
+  const adminApi = admin as AdminLike;
+
   try {
-    // Buscar tokens FCM dos supervisores usando Prisma
     const fcmTokens = await getSupervisorFcmTokens(supervisorIds);
 
     if (fcmTokens.length === 0) {
@@ -141,16 +144,12 @@ export async function sendPontoNotificationToSupervisorsPrisma(
       return;
     }
 
-    // Preparar mensagem no formato solicitado: "Ryan Figueredo acabou de bater ponto no Giga Raposo"
     const tipoNome = getTipoNome(payload.tipo);
     const title = 'Ponto Batido';
     const body = `${payload.funcionarioNome} acabou de bater ${tipoNome.toLowerCase()} no ${payload.unidadeNome}`;
 
     const message = {
-      notification: {
-        title,
-        body,
-      },
+      notification: { title, body },
       data: {
         tipo: 'PONTO_BATIDO',
         registroId: payload.registroId,
@@ -164,15 +163,11 @@ export async function sendPontoNotificationToSupervisorsPrisma(
       tokens: fcmTokens,
       android: {
         priority: 'high' as const,
-        notification: {
-          channelId: 'ponto_notifications',
-          sound: 'default',
-        },
+        notification: { channelId: 'ponto_notifications', sound: 'default' },
       },
     };
 
-    // Enviar notificação
-    const response = await admin.messaging().sendEachForMulticast(message);
+    const response = await adminApi.messaging().sendEachForMulticast(message);
     
     console.log(`Notificações enviadas: ${response.successCount}/${fcmTokens.length}`);
     
