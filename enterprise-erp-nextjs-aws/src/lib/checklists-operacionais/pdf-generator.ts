@@ -1,7 +1,10 @@
 import { PDFDocument, StandardFonts, rgb, PDFPage } from 'pdf-lib';
 import { ChecklistResposta, ChecklistPerguntaTemplate } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { generatePresignedDownloadUrl } from '@/lib/s3';
+import {
+  generatePresignedDownloadUrl,
+  getObjectBuffer,
+} from '@/lib/s3';
 import fs from 'fs';
 import path from 'path';
 
@@ -272,7 +275,50 @@ async function embedImageFromUrl(
       }
     }
 
-    // Se for URL do S3 (ou Amazon), tentar gerar presigned URL para acesso server-side
+    // Se for URL do S3, baixar via SDK (evita fetch em bucket privado e falha de presigned)
+    if (imageUrl.includes('amazonaws.com') && !imageUrl.includes('?')) {
+      try {
+        const urlObj = new URL(imageUrl);
+        const key = urlObj.pathname.startsWith('/')
+          ? urlObj.pathname.substring(1)
+          : urlObj.pathname;
+        // bucket.s3.region.amazonaws.com -> bucket
+        const hostParts = urlObj.hostname.split('.');
+        const bucket =
+          hostParts.length >= 4 && hostParts[1] === 's3'
+            ? hostParts[0]
+            : undefined;
+        if (key) {
+          const buffer = await getObjectBuffer(key, bucket);
+          if (buffer && buffer.length > 0) {
+            const lower = (key || '').toLowerCase();
+            try {
+              if (lower.endsWith('.png')) {
+                return await pdfDoc.embedPng(buffer);
+              }
+              if (
+                lower.endsWith('.jpg') ||
+                lower.endsWith('.jpeg') ||
+                lower.endsWith('.jpe')
+              ) {
+                return await pdfDoc.embedJpg(buffer);
+              }
+              try {
+                return await pdfDoc.embedPng(buffer);
+              } catch {
+                return await pdfDoc.embedJpg(buffer);
+              }
+            } catch (embedError) {
+              console.warn('[PDF] Erro ao embedar imagem S3:', embedError);
+            }
+          }
+        }
+      } catch (urlError) {
+        console.warn('[PDF] Erro ao baixar imagem do S3:', urlError);
+      }
+    }
+
+    // URLs HTTP(S): usar presigned se for S3 ou fetch direto
     let finalUrl = imageUrl;
     const s3Bucket =
       process.env.AWS_S3_BUCKET ||
@@ -282,13 +328,15 @@ async function embedImageFromUrl(
     if (imageUrl.includes('amazonaws.com') && !imageUrl.includes('?')) {
       try {
         const urlObj = new URL(imageUrl);
-        // key: pathname sem barra inicial (ex: "checklists/xxx/yyy.jpg")
         const key = urlObj.pathname.startsWith('/')
           ? urlObj.pathname.substring(1)
           : urlObj.pathname;
+        const hostParts = urlObj.hostname.split('.');
+        const bucket =
+          hostParts.length >= 4 && hostParts[1] === 's3' ? hostParts[0] : undefined;
         if (key) {
           try {
-            finalUrl = await generatePresignedDownloadUrl(key, 3600);
+            finalUrl = await generatePresignedDownloadUrl(key, 3600, bucket);
           } catch (presignError) {
             console.warn(
               '[PDF] Erro ao gerar presigned URL, tentando URL original:',
@@ -322,6 +370,15 @@ async function embedImageFromUrl(
       } catch (urlError) {
         console.warn('[PDF] Erro ao processar URL do S3:', urlError);
       }
+    }
+
+    // URL relativa (ex: /api/...): resolver com base da aplicação
+    if (
+      (finalUrl.startsWith('/') || finalUrl.startsWith('.')) &&
+      process.env.NEXT_PUBLIC_APP_URL
+    ) {
+      const base = process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '');
+      finalUrl = finalUrl.startsWith('/') ? `${base}${finalUrl}` : `${base}/${finalUrl}`;
     }
 
     const response = await fetch(finalUrl, {
@@ -1324,6 +1381,14 @@ export async function generateChecklistPDF(
           error
         );
       }
+    } else {
+      currentPage.drawText('Assinatura não disponível', {
+        x: margin,
+        y: yPos - 12,
+        size: 9,
+        font: regularFont,
+        color: rgb(0.45, 0.45, 0.45),
+      });
     }
 
     currentPage.drawLine({
@@ -1388,6 +1453,14 @@ export async function generateChecklistPDF(
           error
         );
       }
+    } else {
+      currentPage.drawText('Assinatura do gerente pendente', {
+        x: margin,
+        y: yPos - 12,
+        size: 9,
+        font: regularFont,
+        color: rgb(0.45, 0.45, 0.45),
+      });
     }
 
     // Linha e nome do gerente (sempre)
