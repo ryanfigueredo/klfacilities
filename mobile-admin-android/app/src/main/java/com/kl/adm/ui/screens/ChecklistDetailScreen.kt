@@ -55,12 +55,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import com.kl.adm.ui.views.SignatureView
 import androidx.core.content.ContextCompat
+import se.warting.signaturepad.SignaturePadAdapter
+import se.warting.signaturepad.SignaturePadView
 import androidx.core.content.FileProvider
 import com.kl.adm.data.model.AnswerPayload
 import com.kl.adm.data.model.ChecklistEscopoDetalhesResponse
+import com.kl.adm.data.model.ChecklistValidationException
 import com.kl.adm.data.model.GrupoPerguntas
 import com.kl.adm.data.model.PerguntaDetalhe
 import com.kl.adm.data.model.RascunhoData
@@ -89,6 +90,7 @@ fun ChecklistDetailScreen(
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    var validationErrorPerguntaId by remember { mutableStateOf<String?>(null) }
     var escopoDetail by remember { mutableStateOf<ChecklistEscopoDetalhesResponse?>(null) }
     var rascunho by remember { mutableStateOf<RascunhoData?>(null) }
     var respostaId by remember { mutableStateOf<String?>(null) }
@@ -99,7 +101,7 @@ fun ChecklistDetailScreen(
     var optionalPhotoFiles by remember { mutableStateOf<Map<String, List<File>>>(emptyMap()) }
     var observacoes by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
-    var signatureViewRef by remember { mutableStateOf<SignatureView?>(null) }
+    var signaturePadAdapter by remember { mutableStateOf<SignaturePadAdapter?>(null) }
     var selfieFile by remember { mutableStateOf<File?>(null) }
     var pendingPhotoPerguntaId by remember { mutableStateOf<String?>(null) }
     var pendingPhotoFile by remember { mutableStateOf<File?>(null) }
@@ -123,7 +125,7 @@ fun ChecklistDetailScreen(
                 saving = true
                 val esc = escopoDetail ?: return@launch
                 val answers = buildAnswers(esc, booleanAnswers.toMap(), textAnswers.toMap(), notaAnswers.toMap(), motivoNaoConformidade.toMap())
-                val sigBase64 = signatureViewRef?.takeIf { it.hasSignature() }?.getSignatureBitmap()?.let { bitmapToBase64(it) }
+                val sigBase64 = signaturePadAdapter?.takeIf { !it.isEmpty }?.getSignatureBitmap()?.let { bitmapToBase64(it) }
                 val result = withContext(Dispatchers.IO) {
                     checklistRepository.submitResposta(
                         escopoId = esc.escopo.id,
@@ -137,7 +139,15 @@ fun ChecklistDetailScreen(
                     )
                 }
                 saving = false
-                result.onSuccess { onBack() }.onFailure { error = it.message }
+                result.onSuccess { onBack() }.onFailure { e ->
+                                        if (e is ChecklistValidationException) {
+                                            error = e.message
+                                            validationErrorPerguntaId = e.perguntaFaltanteId
+                                        } else {
+                                            error = e.message
+                                            validationErrorPerguntaId = null
+                                        }
+                                    }
             }
         }
     }
@@ -153,7 +163,7 @@ fun ChecklistDetailScreen(
 
     LaunchedEffect(escopoId) {
         loading = true
-        checklistRepository.escopo(escopoId).onSuccess { escopoDetail = it }.onFailure { error = it.message }
+        checklistRepository.escopo(escopoId).onSuccess { escopoDetail = it }.onFailure { error = it.message; validationErrorPerguntaId = null }
         checklistRepository.rascunho(escopoId).onSuccess { resp ->
             resp.rascunho?.let { r ->
                 rascunho = r
@@ -188,8 +198,28 @@ fun ChecklistDetailScreen(
             loading -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(padding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = KLBlue)
             }
-            error != null -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(padding), contentAlignment = Alignment.Center) {
-                Text(error!!, color = MaterialTheme.colorScheme.error)
+            error != null -> Box(
+                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(padding).padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge)
+                    if (validationErrorPerguntaId != null && steps.isNotEmpty()) {
+                        val stepIndex = steps.indexOfFirst { it is ChecklistStep.Pergunta && it.pergunta.id == validationErrorPerguntaId }
+                        if (stepIndex >= 0) {
+                            Button(
+                                onClick = {
+                                    currentStep = stepIndex
+                                    error = null
+                                    validationErrorPerguntaId = null
+                                },
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = KLBlue)
+                            ) {
+                                Text("Adicionar fotos")
+                            }
+                        }
+                    }
+                }
             }
             escopoDetail == null -> Unit
             steps.isEmpty() -> Unit
@@ -276,16 +306,15 @@ fun ChecklistDetailScreen(
                                 Column(Modifier.padding(16.dp)) {
                                     Text("Assinatura do gerente", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
                                     Text("Desenhe abaixo e depois tire sua foto para identificar.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
-                                    AndroidView(
-                                        factory = { ctx -> SignatureView(ctx) },
+                                    SignaturePadView(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(200.dp)
                                             .background(Color.White),
-                                        update = { signatureViewRef = it }
+                                        onReady = { signaturePadAdapter = it }
                                     )
                                     Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        androidx.compose.material3.TextButton(onClick = { signatureViewRef?.clearCanvas() }) {
+                                        androidx.compose.material3.TextButton(onClick = { signaturePadAdapter?.clear() }) {
                                             Text("Limpar assinatura")
                                         }
                                     }
@@ -320,7 +349,7 @@ fun ChecklistDetailScreen(
                                     }.onSuccess {
                                         respostaId = null
                                         scope.launch { snackbarHostState.showSnackbar("Rascunho salvo.", duration = SnackbarDuration.Short) }
-                                    }.onFailure { error = it.message }
+                                    }.onFailure { e -> error = e.message; validationErrorPerguntaId = null }
                                     saving = false
                                 }
                             }) { Text("Salvar rascunho") }
@@ -338,7 +367,7 @@ fun ChecklistDetailScreen(
                                             saving = true
                                             val esc = escopoDetail!!
                                             val answers = buildAnswers(esc, booleanAnswers.toMap(), textAnswers.toMap(), notaAnswers.toMap(), motivoNaoConformidade.toMap())
-                                            val sigBase64 = signatureViewRef?.takeIf { it.hasSignature() }?.getSignatureBitmap()?.let { bitmapToBase64(it) }
+                                            val sigBase64 = signaturePadAdapter?.takeIf { !it.isEmpty }?.getSignatureBitmap()?.let { bitmapToBase64(it) }
                                             withContext(Dispatchers.IO) {
                                                     checklistRepository.submitResposta(
                                                         escopoId = esc.escopo.id,
@@ -350,7 +379,15 @@ fun ChecklistDetailScreen(
                                                         selfieFile = selfieFile,
                                                         optionalPhotoFiles = optionalPhotoFiles
                                                     )
-                                            }.onSuccess { onBack() }.onFailure { error = it.message }
+                                            }.onSuccess { onBack() }.onFailure { e ->
+                                                if (e is ChecklistValidationException) {
+                                                    error = e.message
+                                                    validationErrorPerguntaId = e.perguntaFaltanteId
+                                                } else {
+                                                    error = e.message
+                                                    validationErrorPerguntaId = null
+                                                }
+                                            }
                                             saving = false
                                         }
                                     },

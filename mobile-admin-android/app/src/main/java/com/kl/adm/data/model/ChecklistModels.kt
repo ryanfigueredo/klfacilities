@@ -187,3 +187,22 @@ data class ChecklistUnidadeItem(
     val nome: String,
     val grupoNome: String?
 )
+
+// Resposta de erro 422 (validação) da API de envio de checklist
+data class ChecklistValidationErrorResponse(
+    val error: String? = null,
+    val message: String? = null,
+    val perguntaFaltante: PerguntaFaltante? = null
+)
+
+data class PerguntaFaltante(
+    val id: String,
+    val titulo: String,
+    val tipo: String
+)
+
+/** Lançada quando o envio do checklist retorna 422 com perguntaFaltante (ex.: foto obrigatória não enviada). */
+class ChecklistValidationException(
+    override val message: String,
+    val perguntaFaltanteId: String?
+) : Exception(message)

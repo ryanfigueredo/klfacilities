@@ -272,37 +272,55 @@ async function embedImageFromUrl(
       }
     }
 
-    // Se for URL do S3, tentar gerar presigned URL se necessário
+    // Se for URL do S3 (ou Amazon), tentar gerar presigned URL para acesso server-side
     let finalUrl = imageUrl;
+    const s3Bucket =
+      process.env.AWS_S3_BUCKET ||
+      process.env.NEXT_PUBLIC_AWS_S3_BUCKET ||
+      'kl-checklist';
 
-    // Verificar se é URL do S3 e se precisa de presigned URL
-    const s3Bucket = process.env.AWS_S3_BUCKET;
-    if (s3Bucket && imageUrl.includes(`s3.`) && imageUrl.includes(s3Bucket)) {
-      // Extrair a key do S3 da URL
+    if (imageUrl.includes('amazonaws.com') && !imageUrl.includes('?')) {
       try {
         const urlObj = new URL(imageUrl);
+        // key: pathname sem barra inicial (ex: "checklists/xxx/yyy.jpg")
         const key = urlObj.pathname.startsWith('/')
           ? urlObj.pathname.substring(1)
           : urlObj.pathname;
-
-        // Se não tiver query params (não é presigned), tentar gerar uma
-        if (!urlObj.search) {
+        if (key) {
           try {
             finalUrl = await generatePresignedDownloadUrl(key, 3600);
-            console.log(
-              '[PDF] Gerada presigned URL para assinatura do gerente'
-            );
           } catch (presignError) {
             console.warn(
               '[PDF] Erro ao gerar presigned URL, tentando URL original:',
               presignError
             );
-            // Continuar com URL original
+          }
+        }
+      } catch (urlError) {
+        console.warn('[PDF] Erro ao processar URL S3:', urlError);
+      }
+    } else if (
+      imageUrl.includes('s3.') &&
+      imageUrl.includes(s3Bucket) &&
+      !imageUrl.includes('?')
+    ) {
+      try {
+        const urlObj = new URL(imageUrl);
+        const key = urlObj.pathname.startsWith('/')
+          ? urlObj.pathname.substring(1)
+          : urlObj.pathname;
+        if (key) {
+          try {
+            finalUrl = await generatePresignedDownloadUrl(key, 3600);
+          } catch (presignError) {
+            console.warn(
+              '[PDF] Erro ao gerar presigned URL (s3Bucket):',
+              presignError
+            );
           }
         }
       } catch (urlError) {
         console.warn('[PDF] Erro ao processar URL do S3:', urlError);
-        // Continuar com URL original
       }
     }
 
@@ -1325,43 +1343,29 @@ export async function generateChecklistPDF(
 
     yPos -= signatureHeight + 40;
 
-    // Assinatura do Gerente
+    // Assinatura do Gerente (sempre desenhar seção; imagem quando houver URL)
+    if (yPos < margin + 150) {
+      currentPage = pdfDoc.addPage(pageSize);
+      yPos = height - margin - 30;
+    }
+
+    currentPage.drawText('Gerente', {
+      x: margin,
+      y: yPos,
+      size: 10,
+      font: boldFont,
+      color: rgb(0, 0, 0),
+    });
+
+    yPos -= 15;
+
     if (resposta.gerenteAssinaturaFotoUrl) {
-      if (yPos < margin + 150) {
-        currentPage = pdfDoc.addPage(pageSize);
-        yPos = height - margin - 30;
-      }
-
-      currentPage.drawText('Gerente', {
-        x: margin,
-        y: yPos,
-        size: 10,
-        font: boldFont,
-        color: rgb(0, 0, 0),
-      });
-
-      yPos -= 15;
-
       try {
-        // Tentar carregar a imagem da assinatura
-        let gerenteImage = null;
-        let imageError = null;
-
-        try {
-          gerenteImage = await embedImageFromUrl(
-            pdfDoc,
-            resposta.gerenteAssinaturaFotoUrl
-          );
-        } catch (err) {
-          imageError = err;
-          console.error(
-            '[PDF] Erro ao embedar imagem da assinatura do gerente:',
-            err
-          );
-        }
-
+        const gerenteImage = await embedImageFromUrl(
+          pdfDoc,
+          resposta.gerenteAssinaturaFotoUrl
+        );
         if (gerenteImage) {
-          // Calcular dimensões mantendo proporção (mesmo padrão do supervisor)
           const imgWidth = Math.min(
             signatureLineWidth - 10,
             (gerenteImage.width / gerenteImage.height) * signatureHeight
@@ -1369,7 +1373,6 @@ export async function generateChecklistPDF(
           const imgHeight =
             (gerenteImage.height / gerenteImage.width) * imgWidth;
 
-          // Desenhar a imagem da assinatura (mesmo padrão do supervisor)
           currentPage.drawImage(gerenteImage, {
             x: margin,
             y: yPos - imgHeight,
@@ -1378,33 +1381,31 @@ export async function generateChecklistPDF(
           });
 
           yPos -= imgHeight + 5;
-        } else {
-          console.warn(
-            'Não foi possível carregar a imagem da assinatura do gerente',
-            imageError
-          );
         }
       } catch (error) {
-        console.error('Erro ao carregar foto de assinatura do gerente:', error);
+        console.warn(
+          '[PDF] Erro ao carregar imagem da assinatura do gerente:',
+          error
+        );
       }
+    }
 
-      // Desenhar linha de assinatura (mesmo padrão do supervisor)
-      currentPage.drawLine({
-        start: { x: margin, y: yPos - signatureHeight - 5 },
-        end: { x: margin + signatureLineWidth, y: yPos - signatureHeight - 5 },
-        thickness: 1,
+    // Linha e nome do gerente (sempre)
+    currentPage.drawLine({
+      start: { x: margin, y: yPos - signatureHeight - 5 },
+      end: { x: margin + signatureLineWidth, y: yPos - signatureHeight - 5 },
+      thickness: 1,
+      color: rgb(0, 0, 0),
+    });
+
+    if (resposta.gerenteAssinadoPor) {
+      currentPage.drawText(resposta.gerenteAssinadoPor.name, {
+        x: margin,
+        y: yPos - signatureHeight - 20,
+        size: 9,
+        font: regularFont,
         color: rgb(0, 0, 0),
       });
-
-      if (resposta.gerenteAssinadoPor) {
-        currentPage.drawText(resposta.gerenteAssinadoPor.name, {
-          x: margin,
-          y: yPos - signatureHeight - 20,
-          size: 9,
-          font: regularFont,
-          color: rgb(0, 0, 0),
-        });
-      }
     }
 
     // Rodapé em todas as páginas

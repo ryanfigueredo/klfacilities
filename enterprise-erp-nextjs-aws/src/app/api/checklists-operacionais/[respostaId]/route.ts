@@ -56,6 +56,13 @@ export async function GET(
             email: true,
           },
         },
+        gerenteAssinadoPor: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
         respostas: {
           include: {
             pergunta: true,
@@ -80,6 +87,9 @@ export async function GET(
         observacoes: resposta.observacoes,
         protocolo: resposta.protocolo,
         assinaturaFotoUrl: resposta.assinaturaFotoUrl,
+        gerenteAssinaturaFotoUrl: resposta.gerenteAssinaturaFotoUrl ?? null,
+        gerenteAssinadoEm: resposta.gerenteAssinadoEm ?? null,
+        gerenteAssinadoPor: resposta.gerenteAssinadoPor ?? null,
         startedAt: resposta.startedAt,
         submittedAt: resposta.submittedAt,
         createdAt: resposta.createdAt,

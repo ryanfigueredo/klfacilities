@@ -7,6 +7,8 @@ import com.kl.adm.data.api.ApiConfig
 import com.kl.adm.data.api.ApiModule
 import com.kl.adm.data.model.AnswerPayload
 import com.kl.adm.data.model.ChecklistEscopoDetalhesResponse
+import com.kl.adm.data.model.ChecklistValidationErrorResponse
+import com.kl.adm.data.model.ChecklistValidationException
 import com.kl.adm.data.model.ChecklistOptionsResponse
 import com.kl.adm.data.model.ChecklistRascunhoResponse
 import com.kl.adm.data.model.ChecklistUnidadesResponse
@@ -138,7 +140,18 @@ class ChecklistRepository {
             .build()
         val response = httpClient.newCall(request).execute()
         if (!response.isSuccessful) {
-            val errBody = response.body?.string() ?: response.message
+            val errBody = response.body?.string() ?: response.message ?: "Erro ao enviar"
+            if (response.code == 422) {
+                try {
+                    val parsed = gson.fromJson(errBody, ChecklistValidationErrorResponse::class.java)
+                    if (parsed.perguntaFaltante != null) {
+                        val msg = parsed.message ?: "Pergunta obrigatória não respondida."
+                        throw ChecklistValidationException(msg, parsed.perguntaFaltante.id)
+                    }
+                } catch (e: ChecklistValidationException) {
+                    throw e
+                } catch (_: Exception) { }
+            }
             throw Exception(errBody)
         }
     }

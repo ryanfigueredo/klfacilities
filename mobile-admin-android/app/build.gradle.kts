@@ -97,6 +97,9 @@ dependencies {
 
     implementation("io.coil-kt:coil-compose:2.5.0")
 
+    // Assinatura suave (Bézier) - https://github.com/warting/android-signaturepad
+    implementation("se.warting.signature:signature-pad:0.1.2")
+
     // Firebase Cloud Messaging
     // Usando BOM 33.7.0 porque versões 34.x+ removeram módulos KTX
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
