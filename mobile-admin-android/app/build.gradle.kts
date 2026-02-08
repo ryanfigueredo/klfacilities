@@ -96,6 +96,7 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.0.0")
 
     implementation("io.coil-kt:coil-compose:2.5.0")
+    implementation("io.coil-kt:coil-svg:2.5.0")
 
     // Assinatura suave (Bézier) - https://github.com/warting/android-signaturepad
     implementation("se.warting.signature:signature-pad:0.1.2")
