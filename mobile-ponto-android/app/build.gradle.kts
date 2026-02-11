@@ -66,10 +66,13 @@ dependencies {
     // Localização
     implementation("com.google.android.gms:play-services-location:21.2.0")
 
-    // Câmera (para selfie)
-    implementation("androidx.camera:camera-camera2:1.3.3")
-    implementation("androidx.camera:camera-lifecycle:1.3.3")
-    implementation("androidx.camera:camera-view:1.3.3")
+    // Câmera (para selfie) — 1.5.x com suporte a 16 KB page size (Android 15+ / Google Play)
+    implementation("androidx.camera:camera-camera2:1.5.2")
+    implementation("androidx.camera:camera-lifecycle:1.5.2")
+    implementation("androidx.camera:camera-view:1.5.2")
+
+    // WorkManager (lembretes de ponto)
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

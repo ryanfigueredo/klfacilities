@@ -85,7 +85,7 @@ fun LoginScreen(
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "KL Ponto",
+            text = "KL Facilities",
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.primary
         )

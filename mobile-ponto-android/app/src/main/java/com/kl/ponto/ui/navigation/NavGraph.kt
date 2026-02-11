@@ -1,5 +1,9 @@
 package com.kl.ponto.ui.navigation
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -7,6 +11,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -21,9 +28,23 @@ fun NavGraph(authRepository: AuthRepository) {
     val navController = rememberNavController()
     val scope = rememberCoroutineScope()
     var funcionario by remember { mutableStateOf<Funcionario?>(null) }
+    var initialLoadDone by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         funcionario = authRepository.getFuncionario()
+        initialLoadDone = true
+    }
+
+    if (!initialLoadDone) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator()
+        }
+        return
     }
 
     NavHost(

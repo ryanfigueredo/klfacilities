@@ -17,6 +17,7 @@ private val gson = Gson()
 class AuthRepository(private val context: Context) {
 
     private val funcionarioKey = stringPreferencesKey("funcionario_json")
+    private val lastReminderSlotKey = stringPreferencesKey("last_reminder_slot")
 
     suspend fun saveFuncionario(funcionario: Funcionario) {
         context.dataStore.edit { prefs ->
@@ -35,5 +36,13 @@ class AuthRepository(private val context: Context) {
 
     suspend fun clear() {
         context.dataStore.edit { it.clear() }
+    }
+
+    suspend fun getLastReminderSlot(): String? {
+        return context.dataStore.data.map { it[lastReminderSlotKey] }.first()
+    }
+
+    suspend fun setLastReminderSlot(slot: String) {
+        context.dataStore.edit { it[lastReminderSlotKey] = slot }
     }
 }

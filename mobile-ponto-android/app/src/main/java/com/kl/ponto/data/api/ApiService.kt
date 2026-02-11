@@ -3,6 +3,8 @@ package com.kl.ponto.data.api
 import com.kl.ponto.data.model.AuthRequest
 import com.kl.ponto.data.model.AuthResponse
 import com.kl.ponto.data.model.HistoricoResponse
+import com.kl.ponto.data.model.ManifestacaoRequest
+import com.kl.ponto.data.model.ManifestacaoResponse
 import com.kl.ponto.data.model.PontoResponse
 import com.kl.ponto.data.model.PontosHojeResponse
 import okhttp3.MultipartBody
@@ -35,4 +37,7 @@ interface ApiService {
 
     @POST("/api/mobile/historico")
     suspend fun historico(@Body body: Map<String, String>): Response<HistoricoResponse>
+
+    @POST("/api/manifestacoes")
+    suspend fun criarManifestacao(@Body body: ManifestacaoRequest): Response<ManifestacaoResponse>
 }

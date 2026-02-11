@@ -77,3 +77,17 @@ data class HistoricoFuncionario(
     val nome: String,
     val cpf: String?
 )
+
+data class ManifestacaoRequest(
+    val tipo: String,
+    val mensagem: String,
+    val funcionarioNome: String? = null,
+    val funcionarioCpf: String? = null,
+    val grupoId: String? = null,
+    val unidadeId: String? = null
+)
+
+data class ManifestacaoResponse(
+    val ok: Boolean? = null,
+    val error: String? = null
+)
