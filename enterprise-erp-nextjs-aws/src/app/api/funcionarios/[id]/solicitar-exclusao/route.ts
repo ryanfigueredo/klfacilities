@@ -23,11 +23,11 @@ export async function POST(
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    // MASTER pode excluir diretamente, RH envia solicitação para aprovação
+    // MASTER, RH e ADMIN podem excluir diretamente; outros não têm acesso
     const userRole = (session.user as any).role;
-    if (!['MASTER', 'RH'].includes(userRole)) {
+    if (!['MASTER', 'RH', 'ADMIN'].includes(userRole)) {
       return NextResponse.json(
-        { error: 'Apenas MASTER e RH podem solicitar exclusão' },
+        { error: 'Apenas MASTER, RH e Administrador podem excluir colaboradores' },
         { status: 403 }
       );
     }
@@ -75,8 +75,8 @@ export async function POST(
       );
     }
 
-    // MASTER exclui imediatamente
-    if (userRole === 'MASTER') {
+    // MASTER, RH e ADMIN excluem imediatamente (Supervisor não pode excluir)
+    if (['MASTER', 'RH', 'ADMIN'].includes(userRole)) {
       try {
         const resultado = await prisma.$transaction(async tx => {
           const solicitacao = await tx.solicitacaoExclusaoColaborador.create({
@@ -124,7 +124,7 @@ export async function POST(
       }
     }
 
-    // RH cria solicitação pendente aguardando aprovação do MASTER
+    // Fallback: criar solicitação pendente (não deve chegar aqui com as roles atuais)
     try {
       const solicitacao = await prisma.solicitacaoExclusaoColaborador.create({
         data: {

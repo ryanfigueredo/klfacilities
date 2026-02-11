@@ -126,83 +126,71 @@ export async function POST(req: NextRequest) {
       );
     }
     
-    // Buscar funcionário pelo CPF para pegar a unidade
-    // Primeiro tentar buscar diretamente com CPF normalizado
+    // Buscar funcionário pelo CPF (com unidades permitidas para múltiplas lojas)
     funcionarioFinal = await prisma.funcionario.findFirst({
-      where: { 
-        cpf: cpfNormalizado
-      },
+      where: { cpf: cpfNormalizado },
       include: {
         unidade: true,
+        unidadesPermitidas: { include: { unidade: true } },
       },
     });
-    
-    // Se não encontrou, buscar todos e filtrar manualmente (pode ter formatação no banco)
-    // Isso garante que mesmo CPFs salvos com formatação sejam encontrados
+
     if (!funcionarioFinal) {
-      // Buscar todos os funcionários com CPF e filtrar manualmente
       const todosFuncionarios = await prisma.funcionario.findMany({
-        where: {
-          cpf: { not: null }
-        },
+        where: { cpf: { not: null } },
         include: {
           unidade: true,
+          unidadesPermitidas: { include: { unidade: true } },
         },
       });
-      
-      // Normalizar CPFs do banco e comparar
-      funcionarioFinal = todosFuncionarios.find(f => {
-        if (!f.cpf) return false;
-        const cpfBancoNormalizado = f.cpf.replace(/\D/g, '').trim();
-        return cpfBancoNormalizado === cpfNormalizado;
-      }) || null;
-      
-      // Se encontrou com formatação, atualizar no banco para normalizar
+      funcionarioFinal =
+        todosFuncionarios.find(f => {
+          if (!f.cpf) return false;
+          const cpfBancoNormalizado = f.cpf.replace(/\D/g, '').trim();
+          return cpfBancoNormalizado === cpfNormalizado;
+        }) || null;
       if (funcionarioFinal && funcionarioFinal.cpf !== cpfNormalizado) {
         try {
           await prisma.funcionario.update({
             where: { id: funcionarioFinal.id },
             data: { cpf: cpfNormalizado },
           });
-          // Atualizar o objeto em memória também
           funcionarioFinal.cpf = cpfNormalizado;
         } catch (error) {
           console.error('[PONTO] Erro ao normalizar CPF no banco:', error);
-          // Continuar mesmo se falhar a atualização
         }
       }
     }
-    
+
     if (!funcionarioFinal) {
-      // Log para debug
-      console.log('[PONTO] CPF não encontrado:', {
-        cpfNormalizado,
-        cpfOriginal: cpf,
-        totalFuncionarios: await prisma.funcionario.count(),
-        funcionariosComCPF: await prisma.funcionario.count({ where: { cpf: { not: null } } }),
-      });
       return NextResponse.json(
         { error: 'CPF não cadastrado no sistema. Verifique se o CPF está correto ou entre em contato com o RH.' },
         { status: 404 }
       );
     }
-    
-    if (!funcionarioFinal.unidadeId || !funcionarioFinal.unidade) {
+
+    const unidadesPermitidas =
+      funcionarioFinal.unidadesPermitidas?.length > 0
+        ? funcionarioFinal.unidadesPermitidas.map((u: any) => u.unidade)
+        : funcionarioFinal.unidade
+          ? [funcionarioFinal.unidade]
+          : [];
+
+    if (unidadesPermitidas.length === 0) {
       return NextResponse.json(
-        { error: 'Funcionário não está vinculado a uma unidade' },
+        { error: 'Funcionário não está vinculado a nenhuma unidade' },
         { status: 400 }
       );
     }
-    
-    // Usar unidade do funcionário
-    unidade = funcionarioFinal.unidade;
-    
-    // Criar objeto QR simulado para compatibilidade
+
+    // Unidade será resolvida depois pelo geofence (qual das permitidas contém o ponto)
+    unidade = null;
     qr = {
       id: 'universal',
       code: code,
-      unidadeId: funcionarioFinal.unidadeId,
-      unidade: unidade,
+      unidadeId: null,
+      unidade: null,
+      _unidadesPermitidas: unidadesPermitidas,
     };
   } else {
     // QR normal: buscar QR code e unidade
@@ -239,6 +227,29 @@ export async function POST(req: NextRequest) {
       { error: 'Coordenadas GPS inválidas. Tente novamente.' },
       { status: 400 }
     );
+  }
+
+  // QR Universal: resolver em qual unidade permitida o colaborador está (geofence)
+  if (isUniversal && qr?._unidadesPermitidas?.length) {
+    const permitidas = qr._unidadesPermitidas as any[];
+    unidade = permitidas.find(
+      (u: any) =>
+        u.lat != null &&
+        u.lng != null &&
+        u.radiusM != null &&
+        haversine(Number(u.lat), Number(u.lng), lat!, lng!) <= (u.radiusM ?? 0)
+    ) || null;
+    if (!unidade) {
+      return NextResponse.json(
+        {
+          error:
+            'Você está fora da área de todas as suas unidades. Aproxime-se de uma das lojas onde pode bater ponto.',
+        },
+        { status: 400 }
+      );
+    }
+    qr.unidadeId = unidade.id;
+    qr.unidade = unidade;
   }
 
   // Geofence OBRIGATÓRIO - validar sempre usando a unidade (do QR ou do funcionário)

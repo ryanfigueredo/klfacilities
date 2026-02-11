@@ -166,6 +166,7 @@ model Unidade {
   mapeamentos        MapeamentoGrupoUnidadeResponsavel[]
 
   funcionarios                   Funcionario[]
+  funcionariosPermitidos         FuncionarioUnidade[]
   pontos                         RegistroPonto[]
   qrcodes                        PontoQrCode[]
   checklists                     ChecklistDigital[]
@@ -498,6 +499,20 @@ model Movimento {
   @@index([updatedById])
 }
 
+model FuncionarioUnidade {
+  id           String   @id @default(uuid())
+  funcionarioId String
+  unidadeId    String
+  createdAt   DateTime @default(now())
+
+  funcionario Funcionario @relation(fields: [funcionarioId], references: [id], onDelete: Cascade)
+  unidade    Unidade     @relation(fields: [unidadeId], references: [id], onDelete: Cascade)
+
+  @@unique([funcionarioId, unidadeId])
+  @@index([funcionarioId])
+  @@index([unidadeId])
+}
+
 model Funcionario {
   id             String   @id @default(uuid())
   nome           String   @unique
@@ -510,12 +525,13 @@ model Funcionario {
   cargo          String? // Cargo/função do colaborador
   diaFolga       Int? // Dia da semana de folga (0=Domingo, 1=Segunda, 2=Terça, 3=Quarta, 4=Quinta, 5=Sexta, 6=Sábado)
   grupoId        String
-  unidadeId      String?
+  unidadeId      String? // Unidade principal (primeira da lista; mantido para compatibilidade)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   grupo                Grupo                            @relation(fields: [grupoId], references: [id])
   unidade              Unidade?                         @relation(fields: [unidadeId], references: [id])
+  unidadesPermitidas   FuncionarioUnidade[]             // Unidades onde pode bater ponto
   movimentos           Movimento[]
   registrosPonto       RegistroPonto[]
   termoCiencia         TermoCienciaPonto?

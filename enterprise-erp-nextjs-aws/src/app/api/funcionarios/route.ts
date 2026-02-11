@@ -67,26 +67,45 @@ export async function GET(req: NextRequest) {
           nome: true,
         },
       },
+      unidadesPermitidas: {
+        include: {
+          unidade: { select: { id: true, nome: true } },
+        },
+      },
     },
     orderBy,
   });
 
   return NextResponse.json({
-    rows: rows.map(r => ({
-      id: r.id,
-      nome: r.nome,
-      cpf: r.cpf,
-      grupo: r.grupo.nome,
-      grupoId: r.grupoId,
-      unidadeId: r.unidadeId,
-      unidadeNome: r.unidade?.nome || null,
-      fotoUrl: r.fotoUrl || null,
-      temFotoFacial: !!(r.fotoUrl && r.faceDescriptor),
-      temCracha: r.temCracha || false,
-      fotoCracha: r.fotoCracha || null,
-      cargo: r.cargo || null,
-      diaFolga: r.diaFolga ?? null,
-    })),
+    rows: rows.map(r => {
+      const idsPermitidos = r.unidadesPermitidas.length
+        ? r.unidadesPermitidas.map(u => u.unidadeId)
+        : r.unidadeId
+          ? [r.unidadeId]
+          : [];
+      const nomesPermitidos = r.unidadesPermitidas.length
+        ? r.unidadesPermitidas.map(u => u.unidade.nome)
+        : r.unidade
+          ? [r.unidade.nome]
+          : [];
+      return {
+        id: r.id,
+        nome: r.nome,
+        cpf: r.cpf,
+        grupo: r.grupo.nome,
+        grupoId: r.grupoId,
+        unidadeId: r.unidadeId,
+        unidadeNome: r.unidade?.nome || null,
+        unidadeIds: idsPermitidos,
+        unidadeNomes: nomesPermitidos,
+        fotoUrl: r.fotoUrl || null,
+        temFotoFacial: !!(r.fotoUrl && r.faceDescriptor),
+        temCracha: r.temCracha || false,
+        fotoCracha: r.fotoCracha || null,
+        cargo: r.cargo || null,
+        diaFolga: r.diaFolga ?? null,
+      };
+    }),
   });
 }
 
@@ -137,17 +156,25 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const created = await prisma.funcionario.create({
-      data: {
-        nome,
-        cpf: cpf || null,
-        codigo: codigo || null,
-        grupoId,
-        unidadeId,
-        cargo: cargo || null,
-        diaFolga: diaFolga !== null && diaFolga >= 0 && diaFolga <= 6 ? diaFolga : null,
-        temCracha: temCracha || false,
-      },
+    const created = await prisma.$transaction(async tx => {
+      const func = await tx.funcionario.create({
+        data: {
+          nome,
+          cpf: cpf || null,
+          codigo: codigo || null,
+          grupoId,
+          unidadeId,
+          cargo: cargo || null,
+          diaFolga: diaFolga !== null && diaFolga >= 0 && diaFolga <= 6 ? diaFolga : null,
+          temCracha: temCracha || false,
+        },
+      });
+      if (unidadeId) {
+        await tx.funcionarioUnidade.create({
+          data: { funcionarioId: func.id, unidadeId },
+        });
+      }
+      return func;
     });
 
     return NextResponse.json({ id: created.id });

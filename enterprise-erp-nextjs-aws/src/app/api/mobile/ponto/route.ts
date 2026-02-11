@@ -109,16 +109,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'CPF inválido' }, { status: 400 });
     }
 
-    // Buscar funcionário pelo CPF
+    // Buscar funcionário pelo CPF (com unidades permitidas para múltiplas lojas)
     let funcionario = await prisma.funcionario.findFirst({
       where: { cpf: cpfNormalizado },
-      include: { unidade: true, grupo: true },
+      include: {
+        unidade: true,
+        grupo: true,
+        unidadesPermitidas: { include: { unidade: true } },
+      },
     });
 
     if (!funcionario) {
       const todosFuncionarios = await prisma.funcionario.findMany({
         where: { cpf: { not: null } },
-        include: { unidade: true, grupo: true },
+        include: {
+          unidade: true,
+          grupo: true,
+          unidadesPermitidas: { include: { unidade: true } },
+        },
       });
 
       funcionario =
@@ -136,14 +144,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!funcionario.unidadeId || !funcionario.unidade) {
+    // Unidades onde o colaborador pode bater ponto (múltiplas permitidas)
+    const unidadesPermitidas =
+      funcionario.unidadesPermitidas?.length > 0
+        ? funcionario.unidadesPermitidas.map(u => u.unidade)
+        : funcionario.unidade
+          ? [funcionario.unidade]
+          : [];
+
+    if (unidadesPermitidas.length === 0) {
       return NextResponse.json(
-        { error: 'Funcionário não está vinculado a uma unidade' },
+        { error: 'Funcionário não está vinculado a nenhuma unidade' },
         { status: 400 }
       );
     }
-
-    const unidade = funcionario.unidade;
 
     // GPS é sempre obrigatório
     if (lat == null || lng == null) {
@@ -168,29 +182,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Geofence OBRIGATÓRIO
-    if (unidade.lat != null && unidade.lng != null && unidade.radiusM != null) {
-      const dist = haversine(
-        Number(unidade.lat),
-        Number(unidade.lng),
-        lat,
-        lng
+    // Geofence: deve estar dentro de pelo menos UMA das unidades permitidas
+    let unidade = unidadesPermitidas.find(
+      u =>
+        u.lat != null &&
+        u.lng != null &&
+        u.radiusM != null &&
+        haversine(Number(u.lat), Number(u.lng), lat, lng) <= (u.radiusM ?? 0)
+    );
+
+    if (!unidade) {
+      const primeiraComGeofence = unidadesPermitidas.find(
+        u => u.lat != null && u.lng != null && u.radiusM != null
       );
-      if (dist > unidade.radiusM) {
-        return NextResponse.json(
-          {
-            error: `Você está fora da área permitida. Distância: ${Math.round(dist)}m (permitido: ${unidade.radiusM}m)`,
-            distance: Math.round(dist),
-            allowedRadius: unidade.radiusM,
-          },
-          { status: 400 }
-        );
-      }
-    } else {
       return NextResponse.json(
         {
-          error:
-            'Unidade não tem geofence configurado. Não é possível registrar ponto.',
+          error: primeiraComGeofence
+            ? 'Você está fora da área de todas as suas unidades. Aproxime-se de uma das lojas onde pode bater ponto.'
+            : 'Nenhuma das suas unidades tem geofence configurado. Não é possível registrar ponto.',
         },
         { status: 400 }
       );
@@ -221,7 +230,7 @@ export async function POST(req: NextRequest) {
     const dup = await prisma.registroPonto.findFirst({
       where: {
         funcionarioId: funcionario.id,
-        unidadeId: funcionario.unidadeId,
+        unidadeId: unidade.id,
         tipo: tipo as any,
         timestamp: { gte: twoMinAgo },
       },
@@ -260,11 +269,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Criar registro de ponto
+    // Criar registro de ponto (unidade = onde está dentro do geofence)
     const registro = await prisma.registroPonto.create({
       data: {
         funcionarioId: funcionario.id,
-        unidadeId: funcionario.unidadeId,
+        unidadeId: unidade.id,
         tipo: tipo as any,
         lat: lat,
         lng: lng,

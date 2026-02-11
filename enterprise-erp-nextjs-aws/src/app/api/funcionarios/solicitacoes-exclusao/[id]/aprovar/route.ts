@@ -23,10 +23,10 @@ export async function POST(
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    // Apenas MASTER pode aprovar
-    if (session.user.role !== 'MASTER') {
+    // MASTER, RH e Administrador podem aprovar solicitações de exclusão
+    if (!['MASTER', 'RH', 'ADMIN'].includes(session.user.role)) {
       return NextResponse.json(
-        { error: 'Apenas o MASTER pode aprovar exclusões' },
+        { error: 'Apenas MASTER, RH e Administrador podem aprovar exclusões' },
         { status: 403 }
       );
     }

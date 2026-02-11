@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
   if (!cpf || cpf.length !== 11)
     return NextResponse.json({ error: 'cpf requerido e deve ter 11 dígitos' }, { status: 400 });
 
-  // Buscar funcionário por CPF (normalizado, sem formatação)
+  // Buscar funcionário por CPF (com unidades permitidas para múltiplas lojas)
   let f = await prisma.funcionario.findFirst({
     where: { cpf },
     select: {
@@ -50,15 +50,14 @@ export async function GET(req: NextRequest) {
       unidadeId: true,
       unidade: { select: { id: true, nome: true } },
       grupo: { select: { id: true, nome: true } },
+      unidadesPermitidas: { select: { unidadeId: true } },
     },
   });
 
   // Se não encontrou, tentar buscar todos e filtrar manualmente (pode ter formatação no banco)
   if (!f) {
     const todosFuncionarios = await prisma.funcionario.findMany({
-      where: {
-        cpf: { not: null }
-      },
+      where: { cpf: { not: null } },
       select: {
         id: true,
         nome: true,
@@ -68,8 +67,9 @@ export async function GET(req: NextRequest) {
         unidadeId: true,
         unidade: { select: { id: true, nome: true } },
         grupo: { select: { id: true, nome: true } },
+        unidadesPermitidas: { select: { unidadeId: true } },
       },
-      take: 1000, // Limitar para não sobrecarregar
+      take: 1000,
     });
     
     // Normalizar CPFs do banco e comparar
@@ -105,19 +105,26 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Se for supervisor logado, aplicar restrição de unidades
-  if (me?.id && allowedUnidades && (!f.unidadeId || !allowedUnidades.includes(f.unidadeId))) {
+  const fUnidadeIds = (f as any).unidadesPermitidas?.length
+    ? (f as any).unidadesPermitidas.map((u: any) => u.unidadeId)
+    : f.unidadeId
+      ? [f.unidadeId]
+      : [];
+
+  // Se for supervisor logado, aplicar restrição de unidades (pelo menos uma em comum)
+  if (
+    me?.id &&
+    allowedUnidades &&
+    !fUnidadeIds.some((uid: string) => allowedUnidades!.includes(uid))
+  ) {
     return NextResponse.json({ funcionario: null, message: 'Sem permissão' });
   }
 
   // Se especificou code, verificar se o funcionário está cadastrado na unidade do QR
   if (code) {
-    // Se for QR universal, não validar unidade - retornar funcionário direto
     if (isUniversalQRCode(code)) {
-      // QR universal: retornar funcionário sem validar unidade
-      // A validação de geofence será feita depois quando bater o ponto
+      // QR universal: retornar funcionário; geofence na hora de bater
     } else {
-      // QR normal: validar se funcionário pertence à unidade do QR
       const qr = await prisma.pontoQrCode.findFirst({
         where: { code, ativo: true },
         select: { unidadeId: true },
@@ -128,7 +135,7 @@ export async function GET(req: NextRequest) {
           message: 'QR code inválido',
         });
       }
-      if (f.unidadeId !== qr.unidadeId) {
+      if (!fUnidadeIds.includes(qr.unidadeId)) {
         return NextResponse.json({
           funcionario: null,
           message: 'Funcionário não cadastrado nesta unidade',
@@ -136,7 +143,6 @@ export async function GET(req: NextRequest) {
       }
     }
   } else if (unidadeSlug) {
-    // Se especificou unidade por slug, verificar se o funcionário está cadastrado nela
     const unidade = await prisma.unidade.findMany({
       where: { ativa: true },
       select: { id: true, nome: true },
@@ -144,8 +150,7 @@ export async function GET(req: NextRequest) {
     const unidadeMatch = unidade.find(
       x => slugify(x.nome) === slugify(unidadeSlug)
     );
-
-    if (!unidadeMatch || f.unidadeId !== unidadeMatch.id) {
+    if (!unidadeMatch || !fUnidadeIds.includes(unidadeMatch.id)) {
       return NextResponse.json({
         funcionario: null,
         message: 'Funcionário não cadastrado nesta unidade',
