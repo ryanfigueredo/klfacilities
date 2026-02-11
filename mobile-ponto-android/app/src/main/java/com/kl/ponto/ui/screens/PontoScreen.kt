@@ -81,11 +81,17 @@ import com.kl.ponto.data.model.ManifestacaoRequest
 import com.kl.ponto.utils.GeofenceResult
 import com.kl.ponto.utils.validarGeofence
 import com.kl.ponto.worker.ReminderScheduler
+import android.location.LocationManager
+import android.os.Looper
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
 import com.google.android.gms.tasks.Tasks
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -253,6 +259,7 @@ fun PontoScreen(
         ReminderScheduler.schedule(context)
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -309,8 +316,11 @@ fun PontoScreen(
                                     .padding(vertical = 14.dp)
                                     .clickable(
                                         onClick = {
-                                            showFolhaScreen = true
-                                            scope.launch { drawerState.close() }
+                                            scope.launch {
+                                                drawerState.close()
+                                                delay(250)
+                                                showFolhaScreen = true
+                                            }
                                         },
                                         enabled = true
                                     ),
@@ -325,8 +335,11 @@ fun PontoScreen(
                                     .padding(vertical = 14.dp)
                                     .clickable(
                                         onClick = {
-                                            showManifestacaoScreen = true
-                                            scope.launch { drawerState.close() }
+                                            scope.launch {
+                                                drawerState.close()
+                                                delay(250)
+                                                showManifestacaoScreen = true
+                                            }
                                         },
                                         enabled = true
                                     ),
@@ -572,6 +585,7 @@ fun PontoScreen(
             onDismiss = { showFolhaScreen = false },
             onError = { showFolhaScreen = false; errorDialog = it }
         )
+    }
     }
 
     successMessage?.let { msg ->
@@ -887,29 +901,94 @@ private suspend fun refreshLocation(
     scope: kotlinx.coroutines.CoroutineScope,
     onResult: (Double?, Double?, Float?) -> Unit
 ) {
-    withContext(Dispatchers.IO) {
+    withContext(Dispatchers.Main) {
         val fused = LocationServices.getFusedLocationProviderClient(context)
+        val mainLooper = Looper.getMainLooper()
+        fun deliver(l: android.location.Location?) {
+            if (l != null) onResult(l.latitude, l.longitude, l.accuracy)
+            else onResult(null, null, null)
+        }
         runCatching {
-            var loc = Tasks.await(fused.lastLocation)
+            var loc: android.location.Location? = null
+            loc = withTimeoutOrNull(5000L) {
+                suspendCancellableCoroutine { cont ->
+                    fused.lastLocation
+                        .addOnSuccessListener { l -> if (cont.isActive) cont.resume(l) }
+                        .addOnFailureListener { if (cont.isActive) cont.resume(null) }
+                }
+            }
             if (loc == null) {
-                loc = suspendCancellableCoroutine { cont ->
-                    val cts = com.google.android.gms.tasks.CancellationTokenSource()
-                    val request = CurrentLocationRequest.Builder().setPriority(Priority.PRIORITY_HIGH_ACCURACY).build()
-                    fused.getCurrentLocation(request, cts.token)
-                        .addOnSuccessListener { cont.resume(it) }
-                        .addOnFailureListener { cont.resume(null) }
-                    cont.invokeOnCancellation { cts.cancel() }
+                loc = withTimeoutOrNull(10000L) {
+                    suspendCancellableCoroutine { cont ->
+                        val cts = com.google.android.gms.tasks.CancellationTokenSource()
+                        val req = CurrentLocationRequest.Builder()
+                            .setPriority(Priority.PRIORITY_BALANCED_POWER_ACCURACY)
+                            .setDurationMillis(8000)
+                            .build()
+                        fused.getCurrentLocation(req, cts.token)
+                            .addOnSuccessListener { l -> if (cont.isActive) cont.resume(l) }
+                            .addOnFailureListener { if (cont.isActive) cont.resume(null) }
+                        cont.invokeOnCancellation { cts.cancel() }
+                    }
                 }
             }
-            if (loc != null) {
-                kotlinx.coroutines.withContext(Dispatchers.Main) {
-                    onResult(loc.latitude, loc.longitude, loc.accuracy)
+            if (loc == null) {
+                loc = withTimeoutOrNull(12000L) {
+                    suspendCancellableCoroutine { cont ->
+                        val request = LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, 3000)
+                            .setMaxUpdates(1)
+                            .setWaitForAccurateLocation(false)
+                            .build()
+                        val callback = object : LocationCallback() {
+                            override fun onLocationResult(result: LocationResult) {
+                                fused.removeLocationUpdates(this)
+                                if (cont.isActive) cont.resume(result.lastLocation)
+                            }
+                        }
+                        fused.requestLocationUpdates(request, callback, mainLooper)
+                        cont.invokeOnCancellation { fused.removeLocationUpdates(callback) }
+                    }
                 }
-            } else {
-                kotlinx.coroutines.withContext(Dispatchers.Main) { onResult(null, null, null) }
             }
+            if (loc == null) {
+                val locMgr = context.getSystemService(android.content.Context.LOCATION_SERVICE) as? LocationManager
+                if (locMgr != null && (locMgr.isProviderEnabled(LocationManager.GPS_PROVIDER) || locMgr.isProviderEnabled(LocationManager.NETWORK_PROVIDER))) {
+                    loc = withTimeoutOrNull(10000L) {
+                        suspendCancellableCoroutine { cont ->
+                            val provider = when {
+                                locMgr.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
+                                locMgr.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
+                                else -> null
+                            }
+                            if (provider == null) {
+                                cont.resume(null)
+                                return@suspendCancellableCoroutine
+                            }
+                            val listener = object : android.location.LocationListener {
+                                override fun onLocationChanged(l: android.location.Location) {
+                                    locMgr.removeUpdates(this)
+                                    if (cont.isActive) cont.resume(l)
+                                }
+                                override fun onProviderEnabled(provider: String) {}
+                                override fun onProviderDisabled(provider: String) {}
+                                override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
+                            }
+                            try {
+                                locMgr.requestSingleUpdate(provider, listener, mainLooper)
+                            } catch (e: SecurityException) {
+                                cont.resume(null)
+                                return@suspendCancellableCoroutine
+                            }
+                            cont.invokeOnCancellation {
+                                try { locMgr.removeUpdates(listener) } catch (_: Exception) { }
+                            }
+                        }
+                    }
+                }
+            }
+            deliver(loc)
         }.onFailure {
-            kotlinx.coroutines.withContext(Dispatchers.Main) { onResult(null, null, null) }
+            onResult(null, null, null)
         }
     }
 }

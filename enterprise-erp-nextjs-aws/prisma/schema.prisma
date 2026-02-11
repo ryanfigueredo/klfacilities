@@ -526,6 +526,8 @@ model Funcionario {
   diaFolga       Int? // Dia da semana de folga (0=Domingo, 1=Segunda, 2=Terça, 3=Quarta, 4=Quinta, 5=Sexta, 6=Sábado)
   grupoId        String
   unidadeId      String? // Unidade principal (primeira da lista; mantido para compatibilidade)
+  ativo          Boolean  @default(true) // false = demitido/excluído (soft delete; registros preservados)
+  excluidoEm     DateTime? // Data em que a exclusão foi aprovada
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -540,6 +542,7 @@ model Funcionario {
   @@index([grupoId])
   @@index([unidadeId])
   @@index([codigo])
+  @@index([ativo])
 }
 
 model AuditLog {

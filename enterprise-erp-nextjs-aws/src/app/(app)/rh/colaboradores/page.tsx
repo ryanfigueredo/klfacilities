@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, Suspense, type FormEvent } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -62,6 +63,7 @@ type Row = {
   fotoCracha: string | null;
   cargo: string | null;
   diaFolga: number | null;
+  excluidoEm?: string | null;
 };
 
 function PageInner() {
@@ -131,6 +133,7 @@ function PageInner() {
   >([]);
   const [loadingEditar, setLoadingEditar] = useState(false);
   const [listRefreshKey, setListRefreshKey] = useState(0);
+  const [inativosRows, setInativosRows] = useState<Row[]>([]);
 
   const qs = useMemo(() => {
     const p = new URLSearchParams();
@@ -219,6 +222,17 @@ function PageInner() {
         setSolicitacoesExclusao(solicitacoes?.solicitacoes || []);
       }
     })();
+    // Carregar inativos/demitidos (mesma página, seção separada)
+    if (canView) {
+      const inativosQs = (qs ? qs + '&' : '') + 'inativos=true';
+      fetch('/api/funcionarios?' + inativosQs)
+        .then(res => res.json().catch(() => ({})))
+        .then(data => {
+          const list = Array.isArray(data?.rows) ? data.rows : [];
+          setInativosRows(list.map((f: any) => ({ ...f, diaFolga: f.diaFolga ?? null })));
+        })
+        .catch(() => setInativosRows([]));
+    }
   }, [qs, canView, canApproveExclusao, listRefreshKey]);
 
   async function salvarUnidade(
@@ -420,6 +434,7 @@ function PageInner() {
 
       if (response.ok) {
         toast.success(result.message || 'Solicitação processada com sucesso');
+        setListRefreshKey(k => k + 1);
         router.refresh();
       } else {
         toast.error(result.error || 'Erro ao processar solicitação');
@@ -438,7 +453,7 @@ function PageInner() {
         <div>
           <h2 className="text-xl font-semibold">Colaboradores</h2>
           <p className="text-muted-foreground">
-            Vincule colaboradores às unidades
+            Controle de colaboradores: vincule às unidades, edite e exclua. RH decide exclusões — sem aprovação extra.
           </p>
         </div>
         {canEdit && (
@@ -753,14 +768,17 @@ function PageInner() {
 
       {/* Dialog forms moved to header actions above */}
 
-      {/* Solicitações de Exclusão Pendentes (apenas MASTER) */}
+      {/* Solicitações de Exclusão Pendentes (quando outro perfil solicitou e RH precisa aprovar) */}
       {canApproveExclusao && solicitacoesExclusao.length > 0 && (
         <Card className="border-yellow-200 bg-yellow-50">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-yellow-800">
               <AlertCircle className="h-5 w-5" />
-              Solicitações de Exclusão Pendentes ({solicitacoesExclusao.length})
+              Solicitações de exclusão pendentes de aprovação ({solicitacoesExclusao.length})
             </CardTitle>
+            <p className="text-sm text-yellow-700 mt-1">
+              Quem tem RH/Admin exclui direto na lista. Aqui aparecem pedidos de outros solicitantes.
+            </p>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -824,14 +842,8 @@ function PageInner() {
               variant="outline"
               size="sm"
               onClick={() => {
-                // Forçar refresh da lista
+                setListRefreshKey(k => k + 1);
                 router.refresh();
-                // Também recarregar via fetch
-                (async () => {
-                  const funcsRes = await fetch('/api/funcionarios?' + qs);
-                  const funcs = await funcsRes.json().catch(() => []);
-                  setRows(Array.isArray(funcs?.rows) ? funcs.rows : funcs);
-                })();
               }}
               className="flex items-center gap-2"
             >
@@ -1019,27 +1031,84 @@ function PageInner() {
         </CardContent>
       </Card>
 
-      {/* Dialog de Exclusão */}
+      {/* Inativos / Demitidos — registros preservados para uso jurídico */}
+      {inativosRows.length > 0 && (
+        <Card className="border-muted">
+          <CardHeader>
+            <CardTitle>Inativos / Demitidos</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Colaboradores excluídos. Os registros de ponto são mantidos para fins jurídicos.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Grupo</TableHead>
+                  <TableHead>Unidade</TableHead>
+                  <TableHead>Data da exclusão</TableHead>
+                  <TableHead>Ação</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {inativosRows.map(r => (
+                  <TableRow key={r.id}>
+                    <TableCell>{r.nome}</TableCell>
+                    <TableCell>{r.grupo}</TableCell>
+                    <TableCell>
+                      {r.unidadeNomes?.length
+                        ? r.unidadeNomes.join(', ')
+                        : r.unidadeNome || '—'}
+                    </TableCell>
+                    <TableCell>
+                      {r.excluidoEm
+                        ? new Date(r.excluidoEm).toLocaleDateString('pt-BR', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                          })
+                        : '—'}
+                    </TableCell>
+                    <TableCell>
+                      <Link
+                        href={`/ponto/admin/registros?funcionarioId=${r.id}`}
+                        className="text-primary hover:underline inline-flex items-center gap-1"
+                      >
+                        <Eye className="h-4 w-4" />
+                        Ver registros de ponto
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Dialog de Exclusão — RH/MASTER/ADMIN excluem direto, sem aprovação */}
       <Dialog open={excluirDialogOpen} onOpenChange={setExcluirDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
               {canApproveExclusao
-                ? 'Excluir Colaborador'
+                ? 'Excluir colaborador'
                 : 'Solicitar Exclusão de Colaborador'}
             </DialogTitle>
             <DialogDescription>
               {canApproveExclusao ? (
                 <>
-                  Tem certeza que deseja excluir o colaborador{' '}
-                  <strong>{colaboradorParaExcluir?.nome}</strong>? Esta ação não
-                  pode ser desfeita.
+                  Excluir <strong>{colaboradorParaExcluir?.nome}</strong> da
+                  lista de ativos. O colaborador passará para a seção
+                  &quot;Inativos / Demitidos&quot; e os registros de ponto
+                  serão mantidos para fins jurídicos.
                 </>
               ) : (
                 <>
                   Você está solicitando a exclusão do colaborador{' '}
                   <strong>{colaboradorParaExcluir?.nome}</strong>. Esta
-                  solicitação será enviada para aprovação do ADMIN.
+                  solicitação será enviada para aprovação do RH/Administrador.
                 </>
               )}
             </DialogDescription>
@@ -1051,7 +1120,7 @@ function PageInner() {
                 id="motivo"
                 value={motivoExclusao}
                 onChange={e => setMotivoExclusao(e.target.value)}
-                placeholder="Informe o motivo da exclusão..."
+                placeholder="Ex.: desligamento, demissão..."
                 rows={3}
               />
             </div>
@@ -1075,7 +1144,7 @@ function PageInner() {
               {loadingExclusao
                 ? 'Processando...'
                 : canApproveExclusao
-                  ? 'Excluir Definitivamente'
+                  ? 'Excluir'
                   : 'Solicitar Exclusão'}
             </Button>
           </DialogFooter>

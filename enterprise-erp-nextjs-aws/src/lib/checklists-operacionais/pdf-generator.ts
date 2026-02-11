@@ -318,6 +318,43 @@ async function embedImageFromUrl(
       }
     }
 
+    // Se for URL do CloudFront, o pathname costuma ser o mesmo que a key no S3
+    if (imageUrl.includes('cloudfront.net')) {
+      try {
+        const urlObj = new URL(imageUrl);
+        const key = urlObj.pathname.startsWith('/')
+          ? urlObj.pathname.substring(1)
+          : urlObj.pathname;
+        if (key) {
+          const buffer = await getObjectBuffer(key);
+          if (buffer && buffer.length > 0) {
+            const lower = key.toLowerCase();
+            try {
+              if (lower.endsWith('.png')) {
+                return await pdfDoc.embedPng(buffer);
+              }
+              if (
+                lower.endsWith('.jpg') ||
+                lower.endsWith('.jpeg') ||
+                lower.endsWith('.jpe')
+              ) {
+                return await pdfDoc.embedJpg(buffer);
+              }
+              try {
+                return await pdfDoc.embedPng(buffer);
+              } catch {
+                return await pdfDoc.embedJpg(buffer);
+              }
+            } catch (embedError) {
+              console.warn('[PDF] Erro ao embedar imagem CloudFront:', embedError);
+            }
+          }
+        }
+      } catch (urlError) {
+        console.warn('[PDF] Erro ao baixar imagem do CloudFront:', urlError);
+      }
+    }
+
     // URLs HTTP(S): usar presigned se for S3 ou fetch direto
     let finalUrl = imageUrl;
     const s3Bucket =

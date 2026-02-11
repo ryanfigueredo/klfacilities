@@ -67,6 +67,8 @@ export default function RegistrosPontoPage() {
   });
   const [unidadeId, setUnidadeId] = useState<string>('');
   const [funcionarioId, setFuncionarioId] = useState<string>('');
+  const [incluirDemitidos, setIncluirDemitidos] = useState(false);
+  const [funcionariosInativos, setFuncionariosInativos] = useState<Funcionario[]>([]);
 
   const loadUnidades = useCallback(async () => {
     try {
@@ -89,6 +91,21 @@ export default function RegistrosPontoPage() {
       }
     } catch (error) {
       console.error('Erro ao carregar funcionários:', error);
+    }
+  }, []);
+
+  const loadFuncionariosInativos = useCallback(async () => {
+    try {
+      const res = await fetch('/api/funcionarios?inativos=true');
+      if (res.ok) {
+        const data = await res.json();
+        setFuncionariosInativos(data.rows || []);
+      } else {
+        setFuncionariosInativos([]);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar demitidos:', error);
+      setFuncionariosInativos([]);
     }
   }, []);
 
@@ -140,6 +157,14 @@ export default function RegistrosPontoPage() {
   }, [loadUnidades, loadFuncionarios]);
 
   useEffect(() => {
+    if (incluirDemitidos) {
+      loadFuncionariosInativos();
+    } else {
+      setFuncionariosInativos([]);
+    }
+  }, [incluirDemitidos, loadFuncionariosInativos]);
+
+  useEffect(() => {
     if (mounted && month) {
       loadRegistros();
     }
@@ -176,15 +201,10 @@ export default function RegistrosPontoPage() {
     }).format(date);
   };
 
-  // Filtrar funcionários por unidade selecionada
+  // Ativos + opcionalmente demitidos (para consulta de registros jurídicos)
   const funcionariosFiltrados = unidadeId
-    ? funcionarios.filter(f => {
-        // Precisamos verificar se o funcionário tem a unidade selecionada
-        // Como não temos essa info direta, vamos mostrar todos por enquanto
-        // e filtrar no backend
-        return true;
-      })
-    : funcionarios;
+    ? [...funcionarios, ...(incluirDemitidos ? funcionariosInativos : [])].filter(() => true)
+    : [...funcionarios, ...(incluirDemitidos ? funcionariosInativos : [])];
 
   if (!mounted) {
     return (
@@ -258,14 +278,41 @@ export default function RegistrosPontoPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">Todos os funcionários</SelectItem>
-                  {funcionariosFiltrados.map(funcionario => (
-                    <SelectItem key={funcionario.id} value={funcionario.id}>
-                      {funcionario.nome}
+                  {funcionarios.map(f => (
+                    <SelectItem key={f.id} value={f.id}>
+                      {f.nome}
                     </SelectItem>
                   ))}
+                  {incluirDemitidos &&
+                    funcionariosInativos.map(f => (
+                      <SelectItem key={f.id} value={f.id}>
+                        {f.nome} (demitido)
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
+
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="incluir-demitidos"
+                checked={incluirDemitidos}
+                onChange={e => setIncluirDemitidos(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              <Label htmlFor="incluir-demitidos" className="cursor-pointer">
+                Incluir colaboradores demitidos
+              </Label>
+            </div>
+            <Link
+              href="/rh/colaboradores"
+              className="text-sm text-primary hover:underline"
+            >
+              Ver lista de inativos/demitidos em RH → Colaboradores
+            </Link>
           </div>
 
           <div className="mt-4 flex gap-2">

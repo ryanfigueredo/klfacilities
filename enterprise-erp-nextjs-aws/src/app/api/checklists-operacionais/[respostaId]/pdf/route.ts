@@ -83,13 +83,14 @@ export async function GET(
       },
     });
 
-    // Garantir que os campos de assinatura existam no objeto (Prisma já retorna todos os escalares)
+    // Garantir que os campos de assinatura e gerente existam no objeto para o PDF
     const respostaParaPdf = resposta
       ? {
           ...resposta,
           assinaturaFotoUrl: resposta.assinaturaFotoUrl ?? null,
           gerenteAssinaturaFotoUrl: resposta.gerenteAssinaturaFotoUrl ?? null,
           gerenteAssinadoEm: resposta.gerenteAssinadoEm ?? null,
+          gerenteAssinadoPor: resposta.gerenteAssinadoPor ?? null,
         }
       : null;
 

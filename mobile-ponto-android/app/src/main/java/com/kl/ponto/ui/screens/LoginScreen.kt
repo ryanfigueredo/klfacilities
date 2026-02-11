@@ -28,6 +28,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.decode.SvgDecoder
@@ -39,12 +42,33 @@ import com.kl.ponto.data.repository.AuthRepository
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private fun formatCpf(value: String): String {
-    val numbers = value.replace(Regex("\\D"), "")
-    if (numbers.length <= 3) return numbers
-    if (numbers.length <= 6) return "${numbers.take(3)}.${numbers.drop(3)}"
-    if (numbers.length <= 9) return "${numbers.take(3)}.${numbers.take(6).drop(3)}.${numbers.drop(6)}"
-    return "${numbers.take(3)}.${numbers.take(6).drop(3)}.${numbers.take(9).drop(6)}-${numbers.drop(9).take(2)}"
+/** Máscara CPF: guardamos só dígitos; a exibição usa VisualTransformation para manter o cursor correto. */
+private object CpfVisualTransformation : VisualTransformation {
+    override fun filter(text: androidx.compose.ui.text.AnnotatedString): TransformedText {
+        val digits = text.text.filter { it.isDigit() }.take(11)
+        val formatted = buildString {
+            digits.forEachIndexed { i, c ->
+                if (i == 3 || i == 6) append('.')
+                if (i == 9) append('-')
+                append(c)
+            }
+        }
+        val offsetMapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int = when {
+                offset <= 3 -> offset
+                offset <= 6 -> offset + 1
+                offset <= 9 -> offset + 2
+                else -> (offset + 3).coerceAtMost(14)
+            }
+            override fun transformedToOriginal(offset: Int): Int = when {
+                offset <= 3 -> offset
+                offset <= 7 -> (offset - 1).coerceIn(0, 11)
+                offset <= 11 -> (offset - 2).coerceIn(0, 11)
+                else -> (offset - 3).coerceIn(0, 11)
+            }
+        }
+        return TransformedText(androidx.compose.ui.text.AnnotatedString(formatted), offsetMapping)
+    }
 }
 
 @Composable
@@ -58,7 +82,7 @@ fun LoginScreen(
             .components { add(SvgDecoder.Factory()) }
             .build()
     }
-    var cpf by rememberSaveable { mutableStateOf("") }
+    var cpf by rememberSaveable { mutableStateOf("") } // só dígitos, máx 11
     var loading by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
     val scope = rememberCoroutineScope()
@@ -99,12 +123,13 @@ fun LoginScreen(
 
         OutlinedTextField(
             value = cpf,
-            onValueChange = { cpf = formatCpf(it).take(14) },
+            onValueChange = { new -> cpf = new.filter { it.isDigit() }.take(11) },
             label = { Text("Digite seu CPF") },
             placeholder = { Text("000.000.000-00") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            visualTransformation = CpfVisualTransformation,
             isError = error != null
         )
 

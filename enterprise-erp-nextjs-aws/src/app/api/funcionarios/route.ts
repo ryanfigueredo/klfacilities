@@ -10,10 +10,13 @@ export async function GET(req: NextRequest) {
   const q = normName(url.searchParams.get('q') || '');
   const unidadeId = url.searchParams.get('unidadeId') || undefined;
   const grupoId = url.searchParams.get('grupoId') || undefined;
+  const inativos = url.searchParams.get('inativos') === 'true'; // lista demitidos/excluídos
   const sortBy = url.searchParams.get('sortBy') || 'nome'; // nome, grupo, unidade
   const sortOrder = url.searchParams.get('sortOrder') || 'asc'; // asc, desc
 
   const where: any = {};
+  // Por padrão só ativos; ?inativos=true traz apenas inativos (para seção demitidos)
+  where.ativo = inativos ? false : true;
   if (q) {
     where.nome = { contains: q };
   }
@@ -104,6 +107,8 @@ export async function GET(req: NextRequest) {
         fotoCracha: r.fotoCracha || null,
         cargo: r.cargo || null,
         diaFolga: r.diaFolga ?? null,
+        ativo: r.ativo,
+        excluidoEm: r.excluidoEm ? r.excluidoEm.toISOString() : null,
       };
     }),
   });
