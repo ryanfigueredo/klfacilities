@@ -82,6 +82,7 @@ class ChecklistRepository {
 
     /**
      * Envia checklist operacional (rascunho ou finalizado) via multipart.
+     * @return Result com o id da resposta (rascunho) quando isDraft e a API retornar 201, para o app atualizar respostaId e continuar salvando sobre o mesmo rascunho
      * @param escopoId obrigatório
      * @param answers lista de respostas (JSON)
      * @param observacoes opcional
@@ -104,7 +105,7 @@ class ChecklistRepository {
         assinaturaGerenteDataUrl: String? = null,
         selfieFile: File? = null,
         optionalPhotoFiles: Map<String, List<File>> = emptyMap()
-    ): Result<Unit> = runCatching {
+    ): Result<String?> = runCatching {
         val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
         builder.addFormDataPart("escopoId", escopoId)
         builder.addFormDataPart("answers", gson.toJson(answers))
@@ -139,8 +140,9 @@ class ChecklistRepository {
             .post(body)
             .build()
         val response = httpClient.newCall(request).execute()
+        val responseBody = response.body?.string()
         if (!response.isSuccessful) {
-            val errBody = response.body?.string() ?: response.message ?: "Erro ao enviar"
+            val errBody = responseBody ?: response.message ?: "Erro ao enviar"
             if (response.code == 422) {
                 try {
                     val parsed = gson.fromJson(errBody, ChecklistValidationErrorResponse::class.java)
@@ -154,6 +156,12 @@ class ChecklistRepository {
             }
             throw Exception(errBody)
         }
+        // Retornar id da resposta para o app atualizar estado e reutilizar em próximos saves (rascunho)
+        if (responseBody.isNullOrBlank()) return@runCatching null
+        return@runCatching try {
+            val json = gson.fromJson(responseBody, com.google.gson.JsonObject::class.java)
+            json.getAsJsonObject("resposta")?.get("id")?.takeIf { it.isJsonPrimitive }?.asString
+        } catch (_: Exception) { null }
     }
 
     /**

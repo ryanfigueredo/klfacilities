@@ -7,6 +7,12 @@
     "src/app/api/checklists-operacionais/respostas/route.ts": {
       "maxDuration": 60,
       "memory": 1024
+    },
+    "src/app/api/checklists-operacionais/escopos/[id]/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/checklists-operacionais/options/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [

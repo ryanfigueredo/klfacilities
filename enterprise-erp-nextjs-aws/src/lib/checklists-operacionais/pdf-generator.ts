@@ -275,8 +275,8 @@ async function embedImageFromUrl(
       }
     }
 
-    // Se for URL do S3, baixar via SDK (evita fetch em bucket privado e falha de presigned)
-    if (imageUrl.includes('amazonaws.com') && !imageUrl.includes('?')) {
+    // Se for URL do S3 (com ou sem query string), baixar via SDK
+    if (imageUrl.includes('amazonaws.com')) {
       try {
         const urlObj = new URL(imageUrl);
         const key = urlObj.pathname.startsWith('/')
@@ -289,7 +289,23 @@ async function embedImageFromUrl(
             ? hostParts[0]
             : undefined;
         if (key) {
-          const buffer = await getObjectBuffer(key, bucket);
+          let buffer: Buffer | null = await getObjectBuffer(key, bucket);
+          // Fallback: se getObjectBuffer falhar (ex: credenciais em outro ambiente), tentar presigned + fetch
+          if (!buffer || buffer.length === 0) {
+            try {
+              const presigned = await generatePresignedDownloadUrl(key, 3600, bucket);
+              const res = await fetch(presigned, {
+                headers: { Accept: 'image/png,image/jpeg,image/*' },
+                redirect: 'follow',
+              });
+              if (res.ok) {
+                const ab = await res.arrayBuffer();
+                buffer = Buffer.from(ab);
+              }
+            } catch (presignErr) {
+              console.warn('[PDF] Fallback presigned para S3 falhou:', presignErr);
+            }
+          }
           if (buffer && buffer.length > 0) {
             const lower = (key || '').toLowerCase();
             try {
@@ -326,7 +342,19 @@ async function embedImageFromUrl(
           ? urlObj.pathname.substring(1)
           : urlObj.pathname;
         if (key) {
-          const buffer = await getObjectBuffer(key);
+          let buffer: Buffer | null = await getObjectBuffer(key);
+          if (!buffer || buffer.length === 0) {
+            try {
+              const presigned = await generatePresignedDownloadUrl(key, 3600);
+              const res = await fetch(presigned, {
+                headers: { Accept: 'image/png,image/jpeg,image/*' },
+                redirect: 'follow',
+              });
+              if (res.ok) buffer = Buffer.from(await res.arrayBuffer());
+            } catch (e) {
+              console.warn('[PDF] Fallback presigned CloudFront falhou:', e);
+            }
+          }
           if (buffer && buffer.length > 0) {
             const lower = key.toLowerCase();
             try {

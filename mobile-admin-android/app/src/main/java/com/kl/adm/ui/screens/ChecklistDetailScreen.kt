@@ -65,9 +65,11 @@ import com.kl.adm.data.model.ChecklistValidationException
 import com.kl.adm.data.model.GrupoPerguntas
 import com.kl.adm.data.model.PerguntaDetalhe
 import com.kl.adm.data.model.RascunhoData
+import com.kl.adm.data.prefs.ChecklistInProgressPrefs
 import com.kl.adm.data.repository.ChecklistRepository
 import com.kl.adm.ui.theme.KLBlue
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -117,9 +119,31 @@ fun ChecklistDetailScreen(
         if (!success) return@rememberLauncherForActivityResult
         if (pendingPhotoPerguntaId != null && pendingPhotoFile != null) {
             val id = pendingPhotoPerguntaId!!
-            optionalPhotoFiles = optionalPhotoFiles + (id to (optionalPhotoFiles[id].orEmpty() + pendingPhotoFile!!))
+            val newPhotoMap = optionalPhotoFiles + (id to (optionalPhotoFiles[id].orEmpty() + pendingPhotoFile!!))
+            optionalPhotoFiles = newPhotoMap
             pendingPhotoPerguntaId = null
             pendingPhotoFile = null
+            // Salvar rascunho na hora com a foto nova — crucial para não perder nada
+            scope.launch {
+                val esc = escopoDetail ?: return@launch
+                saving = true
+                val result = withContext(Dispatchers.IO) {
+                    checklistRepository.submitResposta(
+                        escopoId = esc.escopo.id,
+                        answers = buildAnswers(esc, booleanAnswers.toMap(), textAnswers.toMap(), notaAnswers.toMap(), motivoNaoConformidade.toMap()),
+                        observacoes = observacoes.ifBlank { null },
+                        isDraft = true,
+                        respostaId = respostaId,
+                        optionalPhotoFiles = newPhotoMap
+                    )
+                }
+                result.onSuccess { newId ->
+                    if (!newId.isNullOrBlank()) respostaId = newId
+                    snackbarHostState.showSnackbar("Foto salva no rascunho.", duration = SnackbarDuration.Short)
+                }
+                result.onFailure { e -> snackbarHostState.showSnackbar("Erro ao salvar foto no rascunho: ${e.message}", duration = SnackbarDuration.Short) }
+                saving = false
+            }
         } else if (selfieFile != null) {
             scope.launch {
                 saving = true
@@ -161,23 +185,48 @@ fun ChecklistDetailScreen(
         }
     }
 
-    LaunchedEffect(escopoId) {
-        loading = true
-        checklistRepository.escopo(escopoId).onSuccess { escopoDetail = it }.onFailure { error = it.message; validationErrorPerguntaId = null }
-        checklistRepository.rascunho(escopoId).onSuccess { resp ->
-            resp.rascunho?.let { r ->
-                rascunho = r
-                respostaId = r.id
-                observacoes = r.observacoes ?: ""
-                r.respostas.forEach { item ->
-                    item.valorBoolean?.let { v -> booleanAnswers[item.perguntaId] = v }
-                    item.valorTexto?.let { v -> textAnswers[item.perguntaId] = v }
-                    item.observacao?.let { v -> motivoNaoConformidade[item.perguntaId] = v }
-                    item.nota?.toInt()?.let { n -> notaAnswers[item.perguntaId] = n }
+    fun loadData() {
+        scope.launch {
+            loading = true
+            error = null
+            validationErrorPerguntaId = null
+            val escopoDeferred = async { checklistRepository.escopo(escopoId) }
+            val rascunhoDeferred = async { checklistRepository.rascunho(escopoId) }
+            val escopoResult = escopoDeferred.await()
+            val rascunhoResult = rascunhoDeferred.await()
+            escopoResult
+                .onSuccess { escopoDetail = it }
+                .onFailure { e ->
+                    val msg = e.message?.lowercase() ?: ""
+                    error = if (msg.contains("timeout")) {
+                        "Demorou muito para carregar. Verifique sua conexão (Wi-Fi ou dados) e tente novamente."
+                    } else (e.message ?: "Erro ao carregar checklist")
+                    validationErrorPerguntaId = null
+                }
+            rascunhoResult.onSuccess { resp ->
+                resp.rascunho?.let { r ->
+                    rascunho = r
+                    respostaId = r.id
+                    observacoes = r.observacoes ?: ""
+                    r.respostas.forEach { item ->
+                        item.valorBoolean?.let { v -> booleanAnswers[item.perguntaId] = v }
+                        item.valorTexto?.let { v -> textAnswers[item.perguntaId] = v }
+                        item.observacao?.let { v -> motivoNaoConformidade[item.perguntaId] = v }
+                        item.nota?.toInt()?.let { n -> notaAnswers[item.perguntaId] = n }
+                    }
                 }
             }
+            loading = false
         }
-        loading = false
+    }
+
+    LaunchedEffect(escopoId) { loadData() }
+
+    // Persiste escopo em progresso para restaurar se o app for morto (ex: ao abrir câmera em devices com pouca RAM)
+    LaunchedEffect(escopoId, escopoDetail) {
+        if (escopoDetail != null) {
+            ChecklistInProgressPrefs.setChecklistInProgress(context, escopoId)
+        }
     }
 
     Scaffold(
@@ -204,6 +253,10 @@ fun ChecklistDetailScreen(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge)
+                    Button(
+                        onClick = { loadData() },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = KLBlue)
+                    ) { Text("Tentar novamente") }
                     if (validationErrorPerguntaId != null && steps.isNotEmpty()) {
                         val stepIndex = steps.indexOfFirst { it is ChecklistStep.Pergunta && it.pergunta.id == validationErrorPerguntaId }
                         if (stepIndex >= 0) {
@@ -258,20 +311,39 @@ fun ChecklistDetailScreen(
                                         onMotivoChange = { motivoNaoConformidade[s.pergunta.id] = it },
                                         optionalPhotoFiles = optionalPhotoFiles[s.pergunta.id] ?: emptyList(),
                                         onAddPhoto = {
-                                            try {
-                                                val list = optionalPhotoFiles[s.pergunta.id] ?: emptyList()
-                                                val f = File(context.cacheDir, "anexo_${s.pergunta.id}_${list.size}.jpg")
-                                                pendingPhotoPerguntaId = s.pergunta.id
-                                                pendingPhotoFile = f
-                                                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", f)
-                                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                                                    takePictureLauncher.launch(uri)
-                                                } else {
-                                                    pendingCameraUri = uri
-                                                    permissionLauncher.launch(Manifest.permission.CAMERA)
+                                            scope.launch {
+                                                try {
+                                                    // Auto-save antes de abrir câmera (evita perda em devices com pouca RAM como Motorola G20)
+                                                    val esc = escopoDetail
+                                                    if (esc != null && !saving) {
+                                                        saving = true
+                                                        val res = withContext(Dispatchers.IO) {
+                                                            checklistRepository.submitResposta(
+                                                                escopoId = esc.escopo.id,
+                                                                answers = buildAnswers(esc, booleanAnswers.toMap(), textAnswers.toMap(), notaAnswers.toMap(), motivoNaoConformidade.toMap()),
+                                                                observacoes = observacoes.ifBlank { null },
+                                                                isDraft = true,
+                                                                respostaId = respostaId,
+                                                                optionalPhotoFiles = optionalPhotoFiles
+                                                            )
+                                                        }
+                                                        res.onSuccess { newId -> if (!newId.isNullOrBlank()) respostaId = newId }
+                                                        saving = false
+                                                    }
+                                                    val list = optionalPhotoFiles[s.pergunta.id] ?: emptyList()
+                                                    val f = File(context.cacheDir, "anexo_${s.pergunta.id}_${list.size}.jpg")
+                                                    pendingPhotoPerguntaId = s.pergunta.id
+                                                    pendingPhotoFile = f
+                                                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", f)
+                                                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                                                        takePictureLauncher.launch(uri)
+                                                    } else {
+                                                        pendingCameraUri = uri
+                                                        permissionLauncher.launch(Manifest.permission.CAMERA)
+                                                    }
+                                                } catch (e: Exception) {
+                                                    snackbarHostState.showSnackbar("Erro ao abrir câmera: ${e.message}")
                                                 }
-                                            } catch (e: Exception) {
-                                                scope.launch { snackbarHostState.showSnackbar("Erro ao abrir câmera: ${e.message}") }
                                             }
                                         },
                                         onRemovePhoto = { index ->
@@ -321,13 +393,35 @@ fun ChecklistDetailScreen(
                                     Spacer(Modifier.height(16.dp))
                                     Button(
                                         onClick = {
-                                            selfieFile = File(context.cacheDir, "selfie_${System.currentTimeMillis()}.jpg")
-                                            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", selfieFile!!)
-                                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                                                takePictureLauncher.launch(uri)
-                                            } else {
-                                                pendingCameraUri = uri
-                                                permissionLauncher.launch(Manifest.permission.CAMERA)
+                                            scope.launch {
+                                                // Auto-save antes de abrir câmera (evita perda em devices com pouca RAM)
+                                                val esc = escopoDetail
+                                                if (esc != null && !saving) {
+                                                    saving = true
+                                                    val answers = buildAnswers(esc, booleanAnswers.toMap(), textAnswers.toMap(), notaAnswers.toMap(), motivoNaoConformidade.toMap())
+                                                    val sigBase64 = signaturePadAdapter?.takeIf { !it.isEmpty }?.getSignatureBitmap()?.let { bitmapToBase64(it) }
+                                                    val res = withContext(Dispatchers.IO) {
+                                                        checklistRepository.submitResposta(
+                                                            escopoId = esc.escopo.id,
+                                                            answers = answers,
+                                                            observacoes = observacoes.ifBlank { null },
+                                                            isDraft = true,
+                                                            respostaId = respostaId,
+                                                            assinaturaGerenteDataUrl = sigBase64,
+                                                            optionalPhotoFiles = optionalPhotoFiles
+                                                        )
+                                                    }
+                                                    res.onSuccess { newId -> if (!newId.isNullOrBlank()) respostaId = newId }
+                                                    saving = false
+                                                }
+                                                selfieFile = File(context.cacheDir, "selfie_${System.currentTimeMillis()}.jpg")
+                                                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", selfieFile!!)
+                                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                                                    takePictureLauncher.launch(uri)
+                                                } else {
+                                                    pendingCameraUri = uri
+                                                    permissionLauncher.launch(Manifest.permission.CAMERA)
+                                                }
                                             }
                                         },
                                         modifier = Modifier.fillMaxWidth(),
@@ -344,12 +438,11 @@ fun ChecklistDetailScreen(
                                     saving = true
                                     val esc = escopoDetail!!
                                     val answers = buildAnswers(esc, booleanAnswers.toMap(), textAnswers.toMap(), notaAnswers.toMap(), motivoNaoConformidade.toMap())
-                                    withContext(Dispatchers.IO) {
+                                    val res = withContext(Dispatchers.IO) {
                                         checklistRepository.submitResposta(escopoId = esc.escopo.id, answers = answers, observacoes = observacoes.ifBlank { null }, isDraft = true, respostaId = respostaId, optionalPhotoFiles = optionalPhotoFiles)
-                                    }.onSuccess {
-                                        respostaId = null
-                                        scope.launch { snackbarHostState.showSnackbar("Rascunho salvo.", duration = SnackbarDuration.Short) }
-                                    }.onFailure { e -> error = e.message; validationErrorPerguntaId = null }
+                                    }
+                                    res.onSuccess { newId -> if (!newId.isNullOrBlank()) respostaId = newId; snackbarHostState.showSnackbar("Rascunho salvo.", duration = SnackbarDuration.Short) }
+                                    res.onFailure { e -> error = e.message; validationErrorPerguntaId = null }
                                     saving = false
                                 }
                             }) { Text("Salvar rascunho") }
@@ -396,7 +489,32 @@ fun ChecklistDetailScreen(
                                     colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = KLBlue)
                                 ) { Text("Enviar relatório") }
                             }
-                            else -> Button(onClick = { currentStep++ }, modifier = Modifier.weight(1f).widthIn(min = 96.dp), colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = KLBlue)) {
+                            else -> Button(
+                                onClick = {
+                                    scope.launch {
+                                        // Auto-save ao avançar (evita perda se app for morto)
+                                        val esc = escopoDetail
+                                        if (esc != null && !saving) {
+                                            saving = true
+                                            val res = withContext(Dispatchers.IO) {
+                                                checklistRepository.submitResposta(
+                                                    escopoId = esc.escopo.id,
+                                                    answers = buildAnswers(esc, booleanAnswers.toMap(), textAnswers.toMap(), notaAnswers.toMap(), motivoNaoConformidade.toMap()),
+                                                    observacoes = observacoes.ifBlank { null },
+                                                    isDraft = true,
+                                                    respostaId = respostaId,
+                                                    optionalPhotoFiles = optionalPhotoFiles
+                                                )
+                                            }
+                                            res.onSuccess { newId -> if (!newId.isNullOrBlank()) respostaId = newId }
+                                            saving = false
+                                        }
+                                        currentStep++
+                                    }
+                                },
+                                modifier = Modifier.weight(1f).widthIn(min = 96.dp),
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = KLBlue)
+                            ) {
                                 Text("Próximo", maxLines = 1)
                             }
                         }

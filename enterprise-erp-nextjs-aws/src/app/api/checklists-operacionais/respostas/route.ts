@@ -107,18 +107,8 @@ export async function GET(request: NextRequest) {
     include: {
       respostas: {
         include: {
-          pergunta: true,
-        },
-      },
-      template: {
-        include: {
-          grupos: {
-            orderBy: { ordem: 'asc' },
-            include: {
-              perguntas: {
-                orderBy: { ordem: 'asc' },
-              },
-            },
+          pergunta: {
+            select: { id: true, tipo: true },
           },
         },
       },

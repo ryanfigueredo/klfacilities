@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getCurrentUser } from '@/lib/auth';
+
+export const maxDuration = 60;
 import { can, forbiddenPayload } from '@/lib/auth/policy';
 import { prisma } from '@/lib/prisma';
 import { getSupervisorScope } from '@/lib/supervisor-scope';

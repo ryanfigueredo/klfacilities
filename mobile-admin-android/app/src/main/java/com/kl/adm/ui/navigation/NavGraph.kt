@@ -2,11 +2,17 @@ package com.kl.adm.ui.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.kl.adm.data.prefs.ChecklistInProgressPrefs
 import com.kl.adm.data.repository.AuthRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.kl.adm.ui.screens.ChecklistDetailScreen
 import com.kl.adm.ui.screens.ChecklistsScreen
 import com.kl.adm.ui.screens.DashboardScreen
@@ -42,6 +48,7 @@ fun KLAdminNavGraph(
     navController: NavHostController,
     authRepository: AuthRepository
 ) {
+    val scope = rememberCoroutineScope()
     val checklistRepo = remember { com.kl.adm.data.repository.ChecklistRepository() }
     val pontoRepo = remember { com.kl.adm.data.repository.PontoRepository() }
 
@@ -61,7 +68,10 @@ fun KLAdminNavGraph(
                 checklistRepository = checklistRepo,
                 onLogout = { navController.navigate(Screen.Login.route) { popUpTo(0) { inclusive = true } } },
                 onChecklists = { navController.navigate(Screen.Checklists.route) },
-                onPontos = { navController.navigate(Screen.Pontos.route) }
+                onPontos = { navController.navigate(Screen.Pontos.route) },
+                onRestoreChecklistInProgress = { escopoId ->
+                    navController.navigate(Screen.ChecklistDetail.withId(escopoId))
+                }
             )
         }
         composable(Screen.Checklists.route) {
@@ -84,11 +94,17 @@ fun KLAdminNavGraph(
             )
         }
         composable(Screen.ChecklistDetail.route) { backStackEntry ->
+            val context = LocalContext.current
             val escopoId = backStackEntry.arguments?.getString("escopoId") ?: return@composable
             ChecklistDetailScreen(
                 escopoId = escopoId,
                 checklistRepository = checklistRepo,
-                onBack = { navController.popBackStack() }
+                onBack = {
+                    scope.launch {
+                        withContext(Dispatchers.IO) { ChecklistInProgressPrefs.clear(context) }
+                        navController.popBackStack()
+                    }
+                }
             )
         }
         composable(Screen.Pontos.route) {

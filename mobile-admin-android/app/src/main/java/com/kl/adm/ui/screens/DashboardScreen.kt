@@ -35,8 +35,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.kl.adm.data.prefs.ChecklistInProgressPrefs
 import com.kl.adm.data.repository.AuthRepository
 import com.kl.adm.data.repository.ChecklistRepository
 import com.kl.adm.ui.theme.KLBlue
@@ -51,14 +53,27 @@ fun DashboardScreen(
     checklistRepository: ChecklistRepository? = null,
     onLogout: () -> Unit,
     onChecklists: () -> Unit,
-    onPontos: () -> Unit
+    onPontos: () -> Unit,
+    onRestoreChecklistInProgress: ((escopoId: String) -> Unit)? = null
 ) {
+    val context = LocalContext.current
     var user by remember { mutableStateOf<AuthRepository.SavedUser?>(null) }
     var rascunhosCount by remember { mutableStateOf<Int?>(null) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         user = authRepository.getSavedUser()
+    }
+
+    // Restaura checklist em progresso se o app foi morto (ex: ao abrir câmera em devices com pouca RAM)
+    LaunchedEffect(user, onRestoreChecklistInProgress) {
+        if (user != null && onRestoreChecklistInProgress != null) {
+            val escopoId = withContext(Dispatchers.IO) { ChecklistInProgressPrefs.getChecklistInProgress(context) }
+            escopoId?.let { id ->
+                withContext(Dispatchers.IO) { ChecklistInProgressPrefs.clear(context) }
+                onRestoreChecklistInProgress(id)
+            }
+        }
     }
     LaunchedEffect(checklistRepository) {
         checklistRepository?.emAberto()?.onSuccess { rascunhosCount = it.respostas.size }
