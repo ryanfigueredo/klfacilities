@@ -405,7 +405,7 @@ export function ChecklistsRespondidosClient({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950/40 rounded-lg p-4 md:p-6 space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">
@@ -418,7 +418,7 @@ export function ChecklistsRespondidosClient({
         <div className="flex flex-wrap items-center gap-2">
           <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline">
+              <Button variant="outline" className="border-border bg-card shadow-sm">
                 <Archive className="h-4 w-4 mr-2" />
                 Exportar em Lote
               </Button>
@@ -486,75 +486,94 @@ export function ChecklistsRespondidosClient({
               placeholder="Buscar por grupo, unidade, supervisor..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              className="pl-9"
+              className="pl-9 bg-card border-border shadow-sm"
             />
           </div>
         </div>
       </div>
 
-      {/* Filtro por status: Concluídos | Em aberto | Todos */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium text-muted-foreground">Filtros:</span>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant={filtroStatus === 'concluidos' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setFiltroStatus('concluidos')}
-            className="gap-1.5"
-          >
-            <CheckCircle2 className="h-4 w-4" />
-            Concluídos ({countConcluidos})
-          </Button>
-          <Button
-            variant={filtroStatus === 'abertos' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setFiltroStatus('abertos')}
-            className="gap-1.5"
-          >
-            <Clock className="h-4 w-4" />
-            Em aberto ({countAbertos})
-          </Button>
-          <Button
-            variant={filtroStatus === 'todos' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setFiltroStatus('todos')}
-            className="gap-1.5"
-          >
-            <FileText className="h-4 w-4" />
-            Todos ({respostas.length})
-          </Button>
-        </div>
-      </div>
+      {/* Filtro por status */}
+      <Card className="border-border bg-card shadow-sm">
+        <CardContent className="pt-4 pb-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Status</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={filtroStatus === 'concluidos' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFiltroStatus('concluidos')}
+              className="gap-1.5 shadow-sm"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              Concluídos ({countConcluidos})
+            </Button>
+            <Button
+              variant={filtroStatus === 'abertos' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFiltroStatus('abertos')}
+              className="gap-1.5"
+            >
+              <Clock className="h-4 w-4" />
+              Em aberto ({countAbertos})
+            </Button>
+            <Button
+              variant={filtroStatus === 'todos' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFiltroStatus('todos')}
+              className="gap-1.5"
+            >
+              <FileText className="h-4 w-4" />
+              Todos ({respostas.length})
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
-      {/* Abas por supervisor */}
-      <Tabs value={abaSupervisorId} onValueChange={setAbaSupervisorId} className="w-full">
-        <TabsList className="flex flex-wrap h-auto gap-1 bg-muted/60 p-2">
-          <TabsTrigger value="todos" className="gap-1.5">
-            <FileText className="h-4 w-4" />
-            Todos ({respostasFiltradasPorBusca.length})
-          </TabsTrigger>
-          {supervisoresUnicos.map(sup => {
-            const count = respostasFiltradasPorBusca.filter(r => r.supervisor.id === sup.id).length;
-            return (
-              <TabsTrigger key={sup.id} value={sup.id} className="gap-1.5">
-                <User className="h-4 w-4 shrink-0" />
-                <span className="truncate max-w-[140px]" title={sup.name}>{sup.name}</span>
-                <span className="text-muted-foreground">({count})</span>
+      {/* Abas por supervisor — destaque visual */}
+      <Card className="border-border bg-card shadow-sm overflow-hidden">
+        <CardContent className="p-0">
+          <div className="px-4 pt-4 pb-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Supervisor</p>
+            <p className="text-sm text-foreground/80 mt-0.5">Clique em um nome para ver só os relatórios dele(a)</p>
+          </div>
+          <Tabs value={abaSupervisorId} onValueChange={setAbaSupervisorId} className="w-full">
+            <TabsList className="flex flex-wrap h-auto gap-2 rounded-none border-0 border-t border-border bg-slate-100 dark:bg-slate-800/60 p-3 w-full justify-start">
+              <TabsTrigger
+                value="todos"
+                className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md px-4 py-2 rounded-lg font-medium"
+              >
+                <FileText className="h-4 w-4 shrink-0" />
+                Todos ({respostasFiltradasPorBusca.length})
               </TabsTrigger>
-            );
-          })}
-        </TabsList>
+              {supervisoresUnicos.map(sup => {
+                const count = respostasFiltradasPorBusca.filter(r => r.supervisor.id === sup.id).length;
+                return (
+                  <TabsTrigger
+                    key={sup.id}
+                    value={sup.id}
+                    className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md px-4 py-2 rounded-lg font-medium border border-transparent data-[state=inactive]:border-border data-[state=inactive]:bg-card data-[state=inactive]:text-foreground"
+                    title={sup.name}
+                  >
+                    <User className="h-4 w-4 shrink-0" />
+                    <span className="truncate max-w-[160px]">{sup.name}</span>
+                    <span className="tabular-nums opacity-80">({count})</span>
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+          </Tabs>
+        </CardContent>
+      </Card>
 
       {/* Estatísticas (referentes à aba selecionada) */}
       <div className="grid gap-4 md:grid-cols-3">
-        <Card>
+        <Card className="border-border bg-card shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Total de Checklists
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{respostasPorAba.length}</div>
+            <div className="text-2xl font-bold text-foreground">{respostasPorAba.length}</div>
             {abaSupervisorId !== 'todos' && (
               <p className="text-xs text-muted-foreground mt-1">
                 deste supervisor
@@ -567,24 +586,24 @@ export function ChecklistsRespondidosClient({
             )}
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border bg-card shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Confirmações Enviadas
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalConfirmacoes}</div>
+            <div className="text-2xl font-bold text-foreground">{totalConfirmacoes}</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border bg-card shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Confirmações Recebidas
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">
+            <div className="text-2xl font-bold text-green-600 dark:text-green-400">
               {totalConfirmadas}
             </div>
             {totalConfirmacoes > 0 && (
@@ -599,7 +618,7 @@ export function ChecklistsRespondidosClient({
       {/* Lista de Checklists */}
       <div className="space-y-4">
         {respostasPorAba.length === 0 ? (
-          <Card>
+          <Card className="border-border bg-card shadow-sm">
             <CardContent className="py-12">
               <div className="flex flex-col items-center gap-4 text-center">
                 <FileText className="h-12 w-12 text-muted-foreground/40" />
@@ -624,7 +643,7 @@ export function ChecklistsRespondidosClient({
           </Card>
         ) : (
           respostasPorAba.map(resposta => (
-            <Card key={resposta.id}>
+            <Card key={resposta.id} className="border-border bg-card shadow-sm">
               <CardHeader>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1">
@@ -780,8 +799,6 @@ export function ChecklistsRespondidosClient({
           ))
         )}
       </div>
-
-      </Tabs>
     </div>
   );
 }

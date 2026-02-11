@@ -16,7 +16,7 @@ android {
         // Se o app Expo atual tem versionCode = 5, use 6 ou maior
         // Ajuste este valor conforme necessário após verificar no Play Console
         versionCode = (project.findProperty("VERSION_CODE") as String?)?.toIntOrNull() ?: 14
-        versionName = "2.0.0"
+        versionName = "2.0.1"
     }
 
     signingConfigs {
