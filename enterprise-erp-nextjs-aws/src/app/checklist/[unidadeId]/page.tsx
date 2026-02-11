@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { Sparkles, Droplets, Star } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { Logo } from '@/components/ui/logo';
@@ -366,10 +367,13 @@ function LimpezaForm({
         </p>
         {foto && (
           <div className="flex items-center gap-2 p-2 border rounded-md bg-gray-50">
-            <img
+            <Image
               src={URL.createObjectURL(foto)}
               alt="Foto anexada"
+              width={64}
+              height={64}
               className="w-16 h-16 object-cover rounded"
+              unoptimized
             />
             <div className="flex-1">
               <p className="text-sm font-medium text-gray-700">Foto anexada</p>

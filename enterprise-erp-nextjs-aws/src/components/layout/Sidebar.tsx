@@ -127,6 +127,9 @@ export function Sidebar({ open, onClose, onCollapseChange }: SidebarProps) {
               )}
             >
               {appNavSections.map((section, sectionIndex) => {
+                // Esconder seção RH completamente para ADMIN
+                if (section.title === 'RH' && userRole === 'ADMIN') return null;
+                
                 const filteredItems = filterItemsByRole(section.items);
                 if (filteredItems.length === 0) return null;
 
@@ -360,6 +363,9 @@ export function Sidebar({ open, onClose, onCollapseChange }: SidebarProps) {
               <nav className="flex-1 overflow-y-auto p-4">
                 <div className="space-y-6">
                   {appNavSections.map((section) => {
+                    // Esconder seção RH completamente para ADMIN
+                    if (section.title === 'RH' && userRole === 'ADMIN') return null;
+                    
                     const filteredItems = filterItemsByRole(section.items);
                     if (filteredItems.length === 0) return null;
 

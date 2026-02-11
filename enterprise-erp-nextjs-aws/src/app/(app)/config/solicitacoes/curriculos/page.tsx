@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useCallback, useEffect, useMemo, useState, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';

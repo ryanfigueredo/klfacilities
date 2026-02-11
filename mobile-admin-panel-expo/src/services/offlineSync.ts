@@ -6,6 +6,7 @@ import { compressImageForUpload } from "../utils/compressImage";
 
 const SYNC_QUEUE_KEY = "@kl_admin:sync_queue";
 const DRAFT_PREFIX = "@kl_admin:draft:";
+const ESCOPO_CACHE_PREFIX = "@kl_admin:escopo:";
 
 export interface DraftData {
   escopoId: string;
@@ -69,6 +70,71 @@ async function addToSyncQueue(
     }
   } catch (error) {
     console.error("❌ Erro ao adicionar à fila de sincronização:", error);
+  }
+}
+
+/**
+ * Salvar escopo em cache para uso offline
+ */
+export async function saveEscopoCache(
+  escopoId: string,
+  escopoData: any
+): Promise<void> {
+  try {
+    const key = `${ESCOPO_CACHE_PREFIX}${escopoId}`;
+    await AsyncStorage.setItem(key, JSON.stringify({
+      ...escopoData,
+      _cachedAt: Date.now(),
+    }));
+    console.log("✅ Escopo em cache para offline:", escopoId);
+  } catch (error) {
+    console.error("❌ Erro ao salvar escopo em cache:", error);
+  }
+}
+
+/**
+ * Obter escopo do cache (para uso offline)
+ */
+export async function getEscopoCache(
+  escopoId: string
+): Promise<any | null> {
+  try {
+    const key = `${ESCOPO_CACHE_PREFIX}${escopoId}`;
+    const json = await AsyncStorage.getItem(key);
+    if (json) {
+      const data = JSON.parse(json);
+      delete data._cachedAt;
+      return data;
+    }
+    return null;
+  } catch (error) {
+    console.error("❌ Erro ao obter escopo do cache:", error);
+    return null;
+  }
+}
+
+/**
+ * Obter rascunhos locais para um escopo (para continuar offline)
+ */
+export async function getLocalDraftsForEscopo(
+  escopoId: string
+): Promise<DraftData[]> {
+  try {
+    const queueJson = await AsyncStorage.getItem(SYNC_QUEUE_KEY);
+    if (!queueJson) return [];
+    const queue: string[] = JSON.parse(queueJson);
+    const drafts: DraftData[] = [];
+    for (const itemKey of queue) {
+      if (itemKey.startsWith(`${escopoId}_`)) {
+        const respostaId = itemKey === `${escopoId}_new` ? null : itemKey.replace(`${escopoId}_`, "");
+        const draft = await getLocalDraft(escopoId, respostaId);
+        if (draft) drafts.push(draft);
+      }
+    }
+    return drafts;
+  } catch (error) {
+    console.error("❌ Erro ao obter rascunhos locais:", error);
+    return [];
   }
 }
 
@@ -272,6 +338,28 @@ export async function syncAllPendingDrafts(): Promise<{
   } catch (error) {
     console.error("❌ Erro ao sincronizar rascunhos pendentes:", error);
     return { success: 0, failed: 0 };
+  }
+}
+
+/**
+ * Listar escopoIds com rascunhos locais (para exibir "Continuar rascunho" offline)
+ */
+export async function getLocalDraftEscopoIds(): Promise<string[]> {
+  try {
+    const queueJson = await AsyncStorage.getItem(SYNC_QUEUE_KEY);
+    if (!queueJson) return [];
+    const queue: string[] = JSON.parse(queueJson);
+    const escopoIds = new Set<string>();
+    for (const itemKey of queue) {
+      const idx = itemKey.indexOf("_");
+      if (idx > 0) {
+        escopoIds.add(itemKey.substring(0, idx));
+      }
+    }
+    return Array.from(escopoIds);
+  } catch (error) {
+    console.error("❌ Erro ao listar rascunhos locais:", error);
+    return [];
   }
 }
 

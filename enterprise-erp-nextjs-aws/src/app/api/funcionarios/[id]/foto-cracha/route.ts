@@ -13,8 +13,8 @@ export async function POST(
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    // Verificar permissões (MASTER, ADMIN, RH)
-    if (!['MASTER', 'ADMIN', 'RH'].includes(me.role)) {
+    // Verificar permissões (MASTER, RH)
+    if (!['MASTER', 'RH'].includes(me.role)) {
       return NextResponse.json({ error: 'Sem permissão' }, { status: 403 });
     }
 

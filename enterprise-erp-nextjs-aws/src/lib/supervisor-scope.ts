@@ -5,7 +5,9 @@ export interface SupervisorScopeResult {
   unidadeIds: string[];
 }
 
-export async function getSupervisorScope(supervisorId: string): Promise<SupervisorScopeResult> {
+export async function getSupervisorScope(
+  supervisorId: string
+): Promise<SupervisorScopeResult> {
   const assignments = await prisma.supervisorScope.findMany({
     where: { supervisorId },
     select: {
@@ -21,20 +23,20 @@ export async function getSupervisorScope(supervisorId: string): Promise<Supervis
   const grupoIdsDiretos = new Set<string>();
   const unidadeIdsDiretas = new Set<string>();
 
-  // Separar grupos e unidades diretas
+  // Separar grupos e unidades diretas (vinculação em /config/supervisores)
   assignments.forEach(item => {
     if (item.grupoId) grupoIdsDiretos.add(item.grupoId);
     if (item.unidadeId) unidadeIdsDiretas.add(item.unidadeId);
   });
 
-  const grupoIds = new Set<string>(grupoIdsDiretos);
+  // Unidades: se o supervisor tem unidades explicitamente vinculadas, usar APENAS essas
+  // (checklists e pontos mostram só as lojas vinculadas). Se não tiver nenhuma unidade
+  // explícita, aí sim expandir grupos para todas as unidades do grupo.
   const unidadeIds = new Set<string>(unidadeIdsDiretas);
-
-  // Se o supervisor tem grupos vinculados, buscar unidades desses grupos
-  if (grupoIds.size > 0) {
+  if (unidadeIdsDiretas.size === 0 && grupoIdsDiretos.size > 0) {
     const mappings = await prisma.mapeamentoGrupoUnidadeResponsavel.findMany({
       where: {
-        grupoId: { in: Array.from(grupoIds) },
+        grupoId: { in: Array.from(grupoIdsDiretos) },
         ativo: true,
       },
       select: { unidadeId: true },
@@ -42,8 +44,9 @@ export async function getSupervisorScope(supervisorId: string): Promise<Supervis
     mappings.forEach(map => unidadeIds.add(map.unidadeId));
   }
 
-  // Se o supervisor tem unidades específicas vinculadas, buscar os grupos dessas unidades
-  // Isso permite que ele veja os grupos para filtrar as unidades no formulário
+  // Grupos: para o dropdown (grupo selecionado → unidades filtradas). Inclui grupos
+  // vinculados diretamente e grupos das unidades vinculadas.
+  const grupoIds = new Set<string>(grupoIdsDiretos);
   if (unidadeIdsDiretas.size > 0) {
     const unidadesComGrupos = await prisma.unidade.findMany({
       where: {
@@ -54,18 +57,13 @@ export async function getSupervisorScope(supervisorId: string): Promise<Supervis
         id: true,
         mapeamentos: {
           where: { ativo: true },
-          select: {
-            grupoId: true,
-          },
+          select: { grupoId: true },
         },
       },
     });
-
     unidadesComGrupos.forEach(unidade => {
       unidade.mapeamentos.forEach(mapping => {
-        if (mapping.grupoId) {
-          grupoIds.add(mapping.grupoId);
-        }
+        if (mapping.grupoId) grupoIds.add(mapping.grupoId);
       });
     });
   }
@@ -76,7 +74,9 @@ export async function getSupervisorScope(supervisorId: string): Promise<Supervis
   };
 }
 
-export async function getSupervisorUnidadeIds(supervisorId: string): Promise<string[]> {
+export async function getSupervisorUnidadeIds(
+  supervisorId: string
+): Promise<string[]> {
   const { unidadeIds } = await getSupervisorScope(supervisorId);
   return unidadeIds;
 }
@@ -98,7 +98,9 @@ export function filterWhereByUnidades(where: any, unidadeIds: string[]): any {
   }
 
   if (where.unidadeId?.in) {
-    const intersection = where.unidadeId.in.filter((id: string) => unidadeIds.includes(id));
+    const intersection = where.unidadeId.in.filter((id: string) =>
+      unidadeIds.includes(id)
+    );
     if (!intersection.length) {
       return { ...where, unidadeId: '___NO_MATCH___' };
     }
@@ -108,7 +110,10 @@ export function filterWhereByUnidades(where: any, unidadeIds: string[]): any {
   return { ...where, unidadeId: { in: unidadeIds } };
 }
 
-export function supervisorHasAccessToUnidade(unidadeId: string | null | undefined, unidadeIds: string[]): boolean {
+export function supervisorHasAccessToUnidade(
+  unidadeId: string | null | undefined,
+  unidadeIds: string[]
+): boolean {
   if (!unidadeId) return false;
   return unidadeIds.includes(unidadeId);
 }

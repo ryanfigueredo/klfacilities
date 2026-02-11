@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 
 export function QrCard({ url }: { url: string }) {
   const [src, setSrc] = useState('');
@@ -42,7 +43,7 @@ export function QrCard({ url }: { url: string }) {
 
   return (
     <div className="flex items-center gap-3 flex-wrap">
-      <img src={src} alt="QR" className="w-40 h-40 border rounded" />
+      <Image src={src} alt="QR" width={160} height={160} className="w-40 h-40 border rounded object-contain" unoptimized />
       <button onClick={printQr} className="px-2 py-1 rounded border text-sm">
         Imprimir QR
       </button>

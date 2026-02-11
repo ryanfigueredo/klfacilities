@@ -41,15 +41,10 @@ export const API_ENDPOINTS = {
   CHECKLISTS_PENDENTES: "/api/checklists-operacionais/pendentes", // Checklists pendentes
   CHECKLISTS_EM_ABERTO: "/api/checklists-operacionais/em-aberto", // Checklists em aberto (rascunhos)
   CHECKLISTS_RESPONDIDOS: "/api/checklists-operacionais/respondidos", // Checklists respondidos (concluídos)
+  CHECKLISTS_RESPOSTA_DETALHE: "/api/checklists-operacionais", // Detalhes de uma resposta (GET /:respostaId)
   CHECKLISTS_ESCOPO: "/api/checklists-operacionais/escopos", // Detalhes do escopo de checklist
   CHECKLISTS_RESPONDER: "/api/checklists-operacionais/respostas", // Responder checklist
   CHECKLISTS_OPTIONS: "/api/checklists-operacionais/options", // Opções para criar novo checklist (grupos, unidades, templates)
-  // Endpoints de banco de talentos
-  BANCO_TALENTOS: "/api/curriculos", // Listar currículos (filtrado por supervisor)
-  // Endpoints de incidentes
-  INCIDENTES: "/api/incidentes", // Listar incidentes
-  // Endpoints de avaliações
-  AVALIACOES: "/api/checklist/dashboard", // Listar avaliações (checklists digitais)
   // Endpoints de checklist digital (banheiros)
   CHECKLIST_DIGITAL_UNIDADES: "/api/checklist/unidades", // Listar unidades para checklist digital
   CHECKLIST_DIGITAL_UNIDADE: "/api/checklist/unidade", // Informações da unidade para checklist

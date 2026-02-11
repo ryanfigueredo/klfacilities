@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, Suspense, type FormEvent } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,6 +41,7 @@ import {
   Camera,
   Eye,
   RefreshCw,
+  Pencil,
 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -50,30 +52,33 @@ type Row = {
   nome: string;
   cpf: string | null;
   grupo: string;
+  grupoId?: string;
   unidadeId: string | null;
   unidadeNome: string | null;
+  unidadeIds?: string[];
+  unidadeNomes?: string[];
   fotoUrl: string | null;
   temFotoFacial: boolean;
   temCracha: boolean;
   fotoCracha: string | null;
   cargo: string | null;
   diaFolga: number | null;
+  excluidoEm?: string | null;
 };
 
 function PageInner() {
   const { data: session } = useSession();
-  // MASTER tem acesso total, ADMIN e RH podem gerenciar colaboradores
+  // MASTER tem acesso total, RH pode gerenciar colaboradores
   const canView = hasRouteAccess(session?.user?.role as any, [
     'MASTER',
-    'ADMIN',
     'RH',
     'OPERACIONAL',
   ]);
   const canEdit = hasRouteAccess(session?.user?.role as any, [
     'MASTER',
-    'ADMIN',
     'RH',
-  ]); // MASTER e ADMIN podem criar/editar, RH também
+    'SUPERVISOR',
+  ]); // MASTER, RH e Supervisor podem criar/editar (Supervisor não pode excluir)
   const sp = useSearchParams();
   const router = useRouter();
 
@@ -95,8 +100,10 @@ function PageInner() {
   const [colaboradorFoto, setColaboradorFoto] = useState<Row | null>(null);
   const isMaster = session?.user?.role === 'MASTER';
   const isRH = session?.user?.role === 'RH';
-  const canApproveExclusao = isMaster;
-  const canSolicitarExclusao = isMaster || isRH;
+  const isAdmin = session?.user?.role === 'ADMIN';
+  // Excluir/aprovar exclusão: apenas RH Master (MASTER), RH ou Administrador — Supervisor não pode excluir
+  const canApproveExclusao = isMaster || isRH || isAdmin;
+  const canSolicitarExclusao = canApproveExclusao;
 
   // Estados para o formulário de novo colaborador
   const [novoColaboradorGrupoId, setNovoColaboradorGrupoId] = useState('');
@@ -113,6 +120,20 @@ function PageInner() {
   const [unidadesFiltradas, setUnidadesFiltradas] = useState<
     { id: string; nome: string }[]
   >([]);
+  // Dialog Editar Colaborador (edição completa)
+  const [editarColaborador, setEditarColaborador] = useState<Row | null>(null);
+  const [editNome, setEditNome] = useState('');
+  const [editCpf, setEditCpf] = useState('');
+  const [editGrupoId, setEditGrupoId] = useState('');
+  const [editUnidadeIds, setEditUnidadeIds] = useState<string[]>([]);
+  const [editCargo, setEditCargo] = useState('');
+  const [editDiaFolga, setEditDiaFolga] = useState<string>('');
+  const [editUnidadesFiltradas, setEditUnidadesFiltradas] = useState<
+    { id: string; nome: string }[]
+  >([]);
+  const [loadingEditar, setLoadingEditar] = useState(false);
+  const [listRefreshKey, setListRefreshKey] = useState(0);
+  const [inativosRows, setInativosRows] = useState<Row[]>([]);
 
   const qs = useMemo(() => {
     const p = new URLSearchParams();
@@ -201,16 +222,54 @@ function PageInner() {
         setSolicitacoesExclusao(solicitacoes?.solicitacoes || []);
       }
     })();
-  }, [qs, canView, canApproveExclusao]);
+    // Carregar inativos/demitidos (mesma página, seção separada)
+    if (canView) {
+      const inativosQs = (qs ? qs + '&' : '') + 'inativos=true';
+      fetch('/api/funcionarios?' + inativosQs)
+        .then(res => res.json().catch(() => ({})))
+        .then(data => {
+          const list = Array.isArray(data?.rows) ? data.rows : [];
+          setInativosRows(list.map((f: any) => ({ ...f, diaFolga: f.diaFolga ?? null })));
+        })
+        .catch(() => setInativosRows([]));
+    }
+  }, [qs, canView, canApproveExclusao, listRefreshKey]);
 
-  async function salvarUnidade(id: string, unidadeId: string | null) {
-    if (!canEdit) return;
-    await fetch('/api/funcionarios/' + id, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ unidadeId }),
-    });
-    router.refresh();
+  async function salvarUnidade(
+    id: string,
+    unidadeId: string | null,
+    novoUnidadeNome?: string
+  ): Promise<boolean> {
+    if (!canEdit) return false;
+    try {
+      const res = await fetch('/api/funcionarios/' + id, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unidadeId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || 'Erro ao atualizar unidade');
+        return false;
+      }
+      toast.success('Unidade atualizada');
+      // Atualização imediata na lista para o colaborador editado
+      if (novoUnidadeNome !== undefined) {
+        setRows(prev =>
+          prev.map(row =>
+            row.id === id
+              ? { ...row, unidadeId, unidadeNome: novoUnidadeNome }
+              : row
+          )
+        );
+      } else {
+        router.refresh();
+      }
+      return true;
+    } catch (e) {
+      toast.error('Erro ao atualizar unidade');
+      return false;
+    }
   }
 
   async function salvarDiaFolga(id: string, diaFolga: number | null) {
@@ -234,19 +293,26 @@ function PageInner() {
     }
   }
 
-  const getDiaSemanaNome = (dia: number | null): string => {
-    if (dia === null) return 'Sem folga';
-    const dias = [
-      'Domingo',
-      'Segunda',
-      'Terça',
-      'Quarta',
-      'Quinta',
-      'Sexta',
-      'Sábado',
-    ];
-    return dias[dia] || 'Sem folga';
-  };
+  async function salvarCargo(id: string, cargo: string | null) {
+    if (!canEdit) return;
+    try {
+      const res = await fetch('/api/funcionarios/' + id, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cargo: cargo?.trim() || null }),
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        toast.error(error.error || 'Erro ao salvar cargo');
+        return;
+      }
+      toast.success('Cargo atualizado');
+      router.refresh();
+    } catch (error) {
+      console.error('Erro ao salvar cargo:', error);
+      toast.error('Erro ao salvar cargo');
+    }
+  }
 
   // Carregar unidades quando o grupo for selecionado no formulário
   useEffect(() => {
@@ -277,6 +343,39 @@ function PageInner() {
       }
     })();
   }, [novoColaboradorGrupoId]);
+
+  // Carregar unidades do grupo ao editar colaborador
+  useEffect(() => {
+    if (!editarColaborador || !editGrupoId) {
+      setEditUnidadesFiltradas([]);
+      return;
+    }
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/mapeamento?grupoId=${encodeURIComponent(editGrupoId)}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setEditUnidadesFiltradas(
+            Array.isArray(data.unidades) ? data.unidades : []
+          );
+        } else {
+          setEditUnidadesFiltradas([]);
+        }
+      } catch {
+        setEditUnidadesFiltradas([]);
+      }
+    })();
+  }, [editarColaborador, editGrupoId]);
+
+  const toggleEditUnidade = (unidadeId: string) => {
+    setEditUnidadeIds(prev =>
+      prev.includes(unidadeId)
+        ? prev.filter(id => id !== unidadeId)
+        : [...prev, unidadeId]
+    );
+  };
 
   async function solicitarExclusao() {
     if (!colaboradorParaExcluir) return;
@@ -335,6 +434,7 @@ function PageInner() {
 
       if (response.ok) {
         toast.success(result.message || 'Solicitação processada com sucesso');
+        setListRefreshKey(k => k + 1);
         router.refresh();
       } else {
         toast.error(result.error || 'Erro ao processar solicitação');
@@ -353,7 +453,7 @@ function PageInner() {
         <div>
           <h2 className="text-xl font-semibold">Colaboradores</h2>
           <p className="text-muted-foreground">
-            Vincule colaboradores às unidades
+            Controle de colaboradores: vincule às unidades, edite e exclua. RH decide exclusões — sem aprovação extra.
           </p>
         </div>
         {canEdit && (
@@ -662,117 +762,23 @@ function PageInner() {
                 </form>
               </DialogContent>
             </Dialog>
-
-            {/* Importar Planilha Mercantil */}
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="outline">Importar</Button>
-              </DialogTrigger>
-              <DialogContent a11yTitle="Importar colaboradores da planilha">
-                <DialogHeader>
-                  <DialogTitle>Importar Planilha</DialogTitle>
-                  <DialogDescription>
-                    Importe colaboradores da planilha Excel. O sistema irá
-                    identificar automaticamente o grupo e as unidades através de
-                    matching inteligente.
-                  </DialogDescription>
-                </DialogHeader>
-                <form
-                  onSubmit={async (e: FormEvent<HTMLFormElement>) => {
-                    e.preventDefault();
-                    const form = e.currentTarget;
-                    const fd = new FormData(form);
-                    const submitBtn = form.querySelector(
-                      'button[type="submit"]'
-                    ) as HTMLButtonElement;
-                    if (submitBtn) {
-                      submitBtn.disabled = true;
-                      submitBtn.textContent = 'Importando...';
-                    }
-                    try {
-                      const r = await fetch(
-                        '/api/funcionarios/import-mercantil',
-                        {
-                          method: 'POST',
-                          body: fd,
-                        }
-                      );
-                      const j = await r.json();
-                      if (!r.ok) {
-                        alert(j?.error || 'Falha na importação');
-                      } else {
-                        const unmatched = j.unmatched?.length || 0;
-                        let msg = `✅ Importação concluída!\n\nCriados: ${j.criados}\nAtualizados: ${j.atualizados}`;
-                        if (unmatched > 0) {
-                          msg += `\n\n ${unmatched} unidade(s) não encontrada(s) - verifique os detalhes`;
-                        }
-                        alert(msg);
-                      }
-                      form.reset();
-                      router.refresh();
-                    } catch (error) {
-                      alert('Erro ao importar: ' + (error as Error).message);
-                    } finally {
-                      if (submitBtn) {
-                        submitBtn.disabled = false;
-                        submitBtn.textContent = 'Importar';
-                      }
-                    }
-                  }}
-                  className="space-y-3"
-                >
-                  <div>
-                    <label className="block text-sm font-medium mb-2">
-                      Arquivo Excel (.xls ou .xlsx)
-                    </label>
-                    <input
-                      type="file"
-                      name="file"
-                      accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                      required
-                      className="w-full border px-2 py-2 rounded"
-                    />
-                  </div>
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
-                    <strong>Como funciona:</strong>
-                    <ul className="list-disc list-inside mt-1 space-y-1">
-                      <li>
-                        Importa apenas linhas com código de 3 dígitos (coluna A)
-                      </li>
-                      <li>Nome completo vem da coluna E</li>
-                      <li>CPF vem da coluna AC</li>
-                      <li>
-                        Identifica automaticamente grupo e unidade pelas linhas
-                        &quot;Servico:&quot;
-                      </li>
-                      <li>
-                        Faz matching inteligente de unidades (ex: &quot;CENTRO
-                        LAURO DE FREITAS&quot; → &quot;Lauro de Freitas&quot;)
-                      </li>
-                    </ul>
-                  </div>
-                  <DialogFooter>
-                    <Button type="submit" variant="outline">
-                      Importar
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
           </div>
         )}
       </div>
 
       {/* Dialog forms moved to header actions above */}
 
-      {/* Solicitações de Exclusão Pendentes (apenas MASTER) */}
+      {/* Solicitações de Exclusão Pendentes (quando outro perfil solicitou e RH precisa aprovar) */}
       {canApproveExclusao && solicitacoesExclusao.length > 0 && (
         <Card className="border-yellow-200 bg-yellow-50">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-yellow-800">
               <AlertCircle className="h-5 w-5" />
-              Solicitações de Exclusão Pendentes ({solicitacoesExclusao.length})
+              Solicitações de exclusão pendentes de aprovação ({solicitacoesExclusao.length})
             </CardTitle>
+            <p className="text-sm text-yellow-700 mt-1">
+              Quem tem RH/Admin exclui direto na lista. Aqui aparecem pedidos de outros solicitantes.
+            </p>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -836,14 +842,8 @@ function PageInner() {
               variant="outline"
               size="sm"
               onClick={() => {
-                // Forçar refresh da lista
+                setListRefreshKey(k => k + 1);
                 router.refresh();
-                // Também recarregar via fetch
-                (async () => {
-                  const funcsRes = await fetch('/api/funcionarios?' + qs);
-                  const funcs = await funcsRes.json().catch(() => []);
-                  setRows(Array.isArray(funcs?.rows) ? funcs.rows : funcs);
-                })();
               }}
               className="flex items-center gap-2"
             >
@@ -914,7 +914,6 @@ function PageInner() {
                   </button>
                 </TableHead>
                 <TableHead>CPF</TableHead>
-                <TableHead className="w-24">Foto Facial</TableHead>
                 <TableHead>
                   <button
                     type="button"
@@ -929,6 +928,7 @@ function PageInner() {
                     )}
                   </button>
                 </TableHead>
+                <TableHead>Cargo</TableHead>
                 <TableHead>
                   <button
                     type="button"
@@ -943,9 +943,7 @@ function PageInner() {
                     )}
                   </button>
                 </TableHead>
-                {canEdit && <TableHead>Dia de Folga</TableHead>}
                 {canEdit && <TableHead>Ações</TableHead>}
-                {canSolicitarExclusao && <TableHead>Exclusão</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -966,116 +964,63 @@ function PageInner() {
                           )
                         : '—'}
                     </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setColaboradorFoto(r);
-                          setFotoDialogOpen(true);
-                        }}
-                        className="w-full"
-                      >
-                        {r.temFotoFacial ? (
-                          <>
-                            <Eye className="h-4 w-4 mr-1" />
-                            Ver Foto
-                          </>
-                        ) : (
-                          <>
-                            <Camera className="h-4 w-4 mr-1" />
-                            Sem Foto
-                          </>
-                        )}
-                      </Button>
-                    </TableCell>
                     <TableCell>{r.grupo}</TableCell>
+                    <TableCell>{r.cargo || '—'}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span className="flex-1">{r.unidadeNome || '—'}</span>
-                        {canEdit && (
-                          <Select
-                            value={r.unidadeId ?? 'none'}
-                            onValueChange={v =>
-                              salvarUnidade(r.id, v === 'none' ? null : v)
-                            }
-                          >
-                            <SelectTrigger className="w-48">
-                              <SelectValue placeholder="Alterar" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">—</SelectItem>
-                              {unidades.map(u => (
-                                <SelectItem key={u.id} value={u.id}>
-                                  {u.nome}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )}
-                      </div>
+                      {r.unidadeNomes?.length
+                        ? r.unidadeNomes.join(', ')
+                        : r.unidadeNome || '—'}
                     </TableCell>
                     {canEdit && (
                       <TableCell>
-                        <Select
-                          value={
-                            diaFolga !== null &&
-                            diaFolga !== undefined &&
-                            diaFolga >= 0 &&
-                            diaFolga <= 6
-                              ? String(diaFolga)
-                              : '__none'
-                          }
-                          onValueChange={v => {
-                            const diaFolgaValue =
-                              v === '__none' || v === '' ? null : parseInt(v);
-                            if (
-                              diaFolgaValue === null ||
-                              (diaFolgaValue >= 0 && diaFolgaValue <= 6)
-                            ) {
-                              salvarDiaFolga(r.id, diaFolgaValue);
-                            }
-                          }}
-                        >
-                          <SelectTrigger className="w-40">
-                            <SelectValue placeholder="Sem folga" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none">Sem folga</SelectItem>
-                            <SelectItem value="0">Domingo</SelectItem>
-                            <SelectItem value="1">Segunda</SelectItem>
-                            <SelectItem value="2">Terça</SelectItem>
-                            <SelectItem value="3">Quarta</SelectItem>
-                            <SelectItem value="4">Quinta</SelectItem>
-                            <SelectItem value="5">Sexta</SelectItem>
-                            <SelectItem value="6">Sábado</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                    )}
-                    {canEdit && (
-                      <TableCell>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => salvarUnidade(r.id, r.unidadeId)}
-                        >
-                          Salvar
-                        </Button>
-                      </TableCell>
-                    )}
-                    {canSolicitarExclusao && (
-                      <TableCell>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => {
-                            setColaboradorParaExcluir(r);
-                            setExcluirDialogOpen(true);
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => {
+                              setEditarColaborador(r);
+                              setEditNome(r.nome);
+                              setEditCpf(
+                                r.cpf
+                                  ? r.cpf.replace(
+                                      /(\d{3})(\d{3})(\d{3})(\d{2})/,
+                                      '$1.$2.$3-$4'
+                                    )
+                                  : ''
+                              );
+                              setEditGrupoId(r.grupoId || '');
+                              setEditUnidadeIds(
+                                r.unidadeIds?.length
+                                  ? r.unidadeIds
+                                  : r.unidadeId
+                                    ? [r.unidadeId]
+                                    : []
+                              );
+                              setEditCargo(r.cargo || '');
+                              setEditDiaFolga(
+                                diaFolga !== null && diaFolga >= 0 && diaFolga <= 6
+                                  ? String(diaFolga)
+                                  : '__none'
+                              );
+                            }}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          {canSolicitarExclusao && (
+                            <Button
+                              variant="destructive"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => {
+                                setColaboradorParaExcluir(r);
+                                setExcluirDialogOpen(true);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     )}
                   </TableRow>
@@ -1086,27 +1031,84 @@ function PageInner() {
         </CardContent>
       </Card>
 
-      {/* Dialog de Exclusão */}
+      {/* Inativos / Demitidos — registros preservados para uso jurídico */}
+      {inativosRows.length > 0 && (
+        <Card className="border-muted">
+          <CardHeader>
+            <CardTitle>Inativos / Demitidos</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Colaboradores excluídos. Os registros de ponto são mantidos para fins jurídicos.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Grupo</TableHead>
+                  <TableHead>Unidade</TableHead>
+                  <TableHead>Data da exclusão</TableHead>
+                  <TableHead>Ação</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {inativosRows.map(r => (
+                  <TableRow key={r.id}>
+                    <TableCell>{r.nome}</TableCell>
+                    <TableCell>{r.grupo}</TableCell>
+                    <TableCell>
+                      {r.unidadeNomes?.length
+                        ? r.unidadeNomes.join(', ')
+                        : r.unidadeNome || '—'}
+                    </TableCell>
+                    <TableCell>
+                      {r.excluidoEm
+                        ? new Date(r.excluidoEm).toLocaleDateString('pt-BR', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                          })
+                        : '—'}
+                    </TableCell>
+                    <TableCell>
+                      <Link
+                        href={`/ponto/admin/registros?funcionarioId=${r.id}`}
+                        className="text-primary hover:underline inline-flex items-center gap-1"
+                      >
+                        <Eye className="h-4 w-4" />
+                        Ver registros de ponto
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Dialog de Exclusão — RH/MASTER/ADMIN excluem direto, sem aprovação */}
       <Dialog open={excluirDialogOpen} onOpenChange={setExcluirDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
               {canApproveExclusao
-                ? 'Excluir Colaborador'
+                ? 'Excluir colaborador'
                 : 'Solicitar Exclusão de Colaborador'}
             </DialogTitle>
             <DialogDescription>
               {canApproveExclusao ? (
                 <>
-                  Tem certeza que deseja excluir o colaborador{' '}
-                  <strong>{colaboradorParaExcluir?.nome}</strong>? Esta ação não
-                  pode ser desfeita.
+                  Excluir <strong>{colaboradorParaExcluir?.nome}</strong> da
+                  lista de ativos. O colaborador passará para a seção
+                  &quot;Inativos / Demitidos&quot; e os registros de ponto
+                  serão mantidos para fins jurídicos.
                 </>
               ) : (
                 <>
                   Você está solicitando a exclusão do colaborador{' '}
                   <strong>{colaboradorParaExcluir?.nome}</strong>. Esta
-                  solicitação será enviada para aprovação do ADMIN.
+                  solicitação será enviada para aprovação do RH/Administrador.
                 </>
               )}
             </DialogDescription>
@@ -1118,7 +1120,7 @@ function PageInner() {
                 id="motivo"
                 value={motivoExclusao}
                 onChange={e => setMotivoExclusao(e.target.value)}
-                placeholder="Informe o motivo da exclusão..."
+                placeholder="Ex.: desligamento, demissão..."
                 rows={3}
               />
             </div>
@@ -1142,10 +1144,191 @@ function PageInner() {
               {loadingExclusao
                 ? 'Processando...'
                 : canApproveExclusao
-                  ? 'Excluir Definitivamente'
+                  ? 'Excluir'
                   : 'Solicitar Exclusão'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Editar Colaborador */}
+      <Dialog
+        open={!!editarColaborador}
+        onOpenChange={open => {
+          if (!open) setEditarColaborador(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar Colaborador</DialogTitle>
+            <DialogDescription>
+              Altere nome, CPF, grupo, unidade, cargo ou dia de folga.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4 py-2"
+            onSubmit={async (e: FormEvent<HTMLFormElement>) => {
+              e.preventDefault();
+              if (!editarColaborador) return;
+              setLoadingEditar(true);
+              try {
+                const cpfLimpo = editCpf.replace(/\D/g, '').trim() || null;
+                const diaFolgaValue =
+                  editDiaFolga === '__none' || editDiaFolga === ''
+                    ? null
+                    : parseInt(editDiaFolga, 10);
+                const res = await fetch(
+                  '/api/funcionarios/' + editarColaborador.id,
+                  {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      nome: editNome.trim(),
+                      cpf: cpfLimpo,
+                      grupoId: editGrupoId || undefined,
+                      unidadeIds: editUnidadeIds,
+                      cargo: editCargo.trim() || null,
+                      diaFolga:
+                        diaFolgaValue !== null &&
+                        diaFolgaValue >= 0 &&
+                        diaFolgaValue <= 6
+                          ? diaFolgaValue
+                          : null,
+                    }),
+                  }
+                );
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                  toast.error(data.error || 'Erro ao salvar');
+                  return;
+                }
+                toast.success('Colaborador atualizado');
+                setEditarColaborador(null);
+                setListRefreshKey(k => k + 1);
+                router.refresh();
+              } catch (err) {
+                toast.error('Erro ao salvar');
+              } finally {
+                setLoadingEditar(false);
+              }
+            }}
+          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="edit-nome">Nome</Label>
+                <Input
+                  id="edit-nome"
+                  value={editNome}
+                  onChange={e => setEditNome(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-cpf">CPF</Label>
+                <Input
+                  id="edit-cpf"
+                  value={editCpf}
+                  onChange={e => setEditCpf(e.target.value)}
+                  placeholder="000.000.000-00"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-grupo">Grupo</Label>
+                <Select
+                  value={editGrupoId}
+                  onValueChange={v => {
+                    setEditGrupoId(v);
+                    setEditUnidadeIds([]);
+                  }}
+                >
+                  <SelectTrigger id="edit-grupo">
+                    <SelectValue placeholder="Grupo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {grupos.map(g => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Unidades (pode bater ponto em qualquer uma)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Marque todas as unidades onde o colaborador pode registrar ponto.
+                </p>
+                <div className="border rounded-md p-3 max-h-40 overflow-y-auto space-y-2">
+                  {!editGrupoId ? (
+                    <span className="text-sm text-muted-foreground">
+                      Selecione o grupo primeiro
+                    </span>
+                  ) : editUnidadesFiltradas.length === 0 ? (
+                    <span className="text-sm text-muted-foreground">
+                      Nenhuma unidade neste grupo
+                    </span>
+                  ) : (
+                    editUnidadesFiltradas.map(u => (
+                      <label
+                        key={u.id}
+                        className="flex items-center gap-2 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={editUnidadeIds.includes(u.id)}
+                          onChange={() => toggleEditUnidade(u.id)}
+                          className="rounded border-input"
+                        />
+                        <span className="text-sm">{u.nome}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-cargo">Cargo</Label>
+                <Input
+                  id="edit-cargo"
+                  value={editCargo}
+                  onChange={e => setEditCargo(e.target.value)}
+                  placeholder="Ex: ASG, Encarregado..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-diafolga">Dia de Folga</Label>
+                <Select
+                  value={editDiaFolga}
+                  onValueChange={setEditDiaFolga}
+                >
+                  <SelectTrigger id="edit-diafolga">
+                    <SelectValue placeholder="Sem folga" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none">Sem folga</SelectItem>
+                    <SelectItem value="0">Domingo</SelectItem>
+                    <SelectItem value="1">Segunda</SelectItem>
+                    <SelectItem value="2">Terça</SelectItem>
+                    <SelectItem value="3">Quarta</SelectItem>
+                    <SelectItem value="4">Quinta</SelectItem>
+                    <SelectItem value="5">Sexta</SelectItem>
+                    <SelectItem value="6">Sábado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setEditarColaborador(null)}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={loadingEditar}>
+                {loadingEditar ? 'Salvando...' : 'Salvar'}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

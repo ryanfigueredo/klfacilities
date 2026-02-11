@@ -8,17 +8,18 @@ export function useProvisionsByMonth(month: Date, filters: URLSearchParams) {
   const [data, setData] = useState<ProvisionEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const monthKey = month.toISOString();
+  const filtersKey = filters.toString();
+
   useEffect(() => {
+    const m = new Date(monthKey);
     const qs = new URLSearchParams(filters);
-    qs.set('start', format(startOfMonth(month), 'yyyy-MM-dd'));
-    qs.set('end', format(endOfMonth(month), 'yyyy-MM-dd'));
-    // status pendentes + pagos + cancelados para dots
-    // Se a API aceitar múltiplos, remova este set fixo; aqui trazemos todos
-    // e o backend deve ignorar ausência de status para retornar todos
+    qs.set('start', format(startOfMonth(m), 'yyyy-MM-dd'));
+    qs.set('end', format(endOfMonth(m), 'yyyy-MM-dd'));
 
     setLoading(true);
-    qs.set('from', format(startOfMonth(month), 'yyyy-MM-dd'));
-    qs.set('to', format(endOfMonth(month), 'yyyy-MM-dd'));
+    qs.set('from', format(startOfMonth(m), 'yyyy-MM-dd'));
+    qs.set('to', format(endOfMonth(m), 'yyyy-MM-dd'));
     fetch(`/api/provisionamentos?${qs.toString()}`)
       .then(r => r.json())
       .then(j => {
@@ -46,7 +47,7 @@ export function useProvisionsByMonth(month: Date, filters: URLSearchParams) {
         setData(out);
       })
       .finally(() => setLoading(false));
-  }, [month.toISOString(), filters.toString()]);
+  }, [monthKey, filtersKey, month, filters]);
 
   return { data, loading };
 }

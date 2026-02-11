@@ -49,6 +49,7 @@ type AnswerPayload = {
   valorNumero?: number | string | null;
   valorOpcao?: string | null;
   nota?: number | null;
+  fotoUrl?: string | null;
 };
 
 export async function GET(request: NextRequest) {
@@ -106,18 +107,8 @@ export async function GET(request: NextRequest) {
     include: {
       respostas: {
         include: {
-          pergunta: true,
-        },
-      },
-      template: {
-        include: {
-          grupos: {
-            orderBy: { ordem: 'asc' },
-            include: {
-              perguntas: {
-                orderBy: { ordem: 'asc' },
-              },
-            },
+          pergunta: {
+            select: { id: true, tipo: true },
           },
         },
       },
@@ -445,8 +436,30 @@ export async function POST(request: NextRequest) {
         // Verificar se permite múltiplas fotos
         const permiteMultiplas = pergunta.permiteMultiplasFotos ?? false;
 
+        // Helper: extrair URLs do payload (fotos já salvas no rascunho, vindas do mobile)
+        const parseFotoUrlFromPayload = (): string[] | null => {
+          const raw = payload?.fotoUrl;
+          if (!raw || typeof raw !== 'string') return null;
+          try {
+            const parsed = raw.trim().startsWith('[') ? JSON.parse(raw) : [raw];
+            const urls = Array.isArray(parsed)
+              ? parsed.filter(
+                  (u: unknown) =>
+                    typeof u === 'string' &&
+                    (u.startsWith('http://') || u.startsWith('https://'))
+                )
+              : [];
+            return urls.length > 0 ? urls : null;
+          } catch {
+            return typeof raw === 'string' &&
+              (raw.startsWith('http://') || raw.startsWith('https://'))
+              ? [raw]
+              : null;
+          }
+        };
+
         if (permiteMultiplas) {
-          // Coletar todas as fotos primeiro
+          // Coletar fotos do FormData (novas fotos sendo enviadas)
           const filesToUpload: Array<{ file: File; index: number }> = [];
           let index = 0;
 
@@ -457,34 +470,39 @@ export async function POST(request: NextRequest) {
             index++;
           }
 
-          if (filesToUpload.length === 0) {
-            if (pergunta.obrigatoria && !isDraft) {
-              return NextResponse.json(
-                {
-                  error: 'validation_error',
-                  message: `Envie pelo menos uma foto para "${pergunta.titulo}".`,
-                },
-                { status: 422 }
-              );
+          let fotos: string[];
+
+          if (filesToUpload.length > 0) {
+            // Fazer uploads em paralelo
+            const uploadPromises = filesToUpload.map(
+              async ({ file, index }) => {
+                const buffer = Buffer.from(await file.arrayBuffer());
+                return uploadBufferToS3({
+                  buffer,
+                  originalName:
+                    file.name || `checklist-${pergunta.id}-${index}.jpg`,
+                  contentType: file.type || 'image/jpeg',
+                  prefix: `checklists/${escopo.template.id}`,
+                });
+              }
+            );
+            const fotosNovas = await Promise.all(uploadPromises);
+            // Mesclar com URLs já existentes no payload (fotos do rascunho)
+            const urlsFromPayload = parseFotoUrlFromPayload();
+            fotos = urlsFromPayload
+              ? [...urlsFromPayload, ...fotosNovas]
+              : fotosNovas;
+          } else {
+            // Sem arquivos no FormData: verificar se payload tem fotoUrl (fotos já salvas no rascunho)
+            const urlsFromPayload = parseFotoUrlFromPayload();
+            if (urlsFromPayload) {
+              fotos = urlsFromPayload;
+            } else {
+              // Sem fotos: não exige (supervisor sabe que deve enviar; quando tiver, envia certinho)
+              break;
             }
-            break;
           }
 
-          // Fazer uploads em paralelo
-          const uploadPromises = filesToUpload.map(async ({ file, index }) => {
-            const buffer = Buffer.from(await file.arrayBuffer());
-            return uploadBufferToS3({
-              buffer,
-              originalName:
-                file.name || `checklist-${pergunta.id}-${index}.jpg`,
-              contentType: file.type || 'image/jpeg',
-              prefix: `checklists/${escopo.template.id}`,
-            });
-          });
-
-          const fotos = await Promise.all(uploadPromises);
-
-          // Salvar múltiplas fotos como JSON array
           const resposta: (typeof respostasProcessadas)[0] = {
             perguntaId: pergunta.id,
             fotoUrl: JSON.stringify(fotos),
@@ -500,32 +518,32 @@ export async function POST(request: NextRequest) {
           // Processar foto única (comportamento original)
           const file = formData.get(`foto_${pergunta.id}`);
 
-          if (!(file instanceof Blob) || file.size === 0) {
-            if (pergunta.obrigatoria && !isDraft) {
-              return NextResponse.json(
-                {
-                  error: 'validation_error',
-                  message: `Envie a foto para "${pergunta.titulo}".`,
-                },
-                { status: 422 }
-              );
-            }
-            break;
-          }
+          let photoUrl: string;
 
-          const buffer = Buffer.from(await file.arrayBuffer());
-          const photoUrl = await uploadBufferToS3({
-            buffer,
-            originalName: (file as File).name || `checklist-${pergunta.id}.jpg`,
-            contentType: file.type || 'image/jpeg',
-            prefix: `checklists/${escopo.template.id}`,
-          });
+          if (file instanceof Blob && file.size > 0) {
+            const buffer = Buffer.from(await file.arrayBuffer());
+            photoUrl = await uploadBufferToS3({
+              buffer,
+              originalName:
+                (file as File).name || `checklist-${pergunta.id}.jpg`,
+              contentType: file.type || 'image/jpeg',
+              prefix: `checklists/${escopo.template.id}`,
+            });
+          } else {
+            // Sem arquivo no FormData: verificar se payload tem fotoUrl (foto já salva no rascunho)
+            const urlsFromPayload = parseFotoUrlFromPayload();
+            if (urlsFromPayload && urlsFromPayload.length > 0) {
+              photoUrl = urlsFromPayload[0];
+            } else {
+              // Sem foto: não exige (supervisor sabe que deve enviar; quando tiver, envia certinho)
+              break;
+            }
+          }
 
           const resposta: (typeof respostasProcessadas)[0] = {
             perguntaId: pergunta.id,
             fotoUrl: photoUrl,
           };
-          // Adicionar nota se existir no payload
           if (payload?.nota !== undefined && payload.nota !== null) {
             resposta.nota =
               typeof payload.nota === 'number'

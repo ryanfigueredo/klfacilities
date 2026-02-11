@@ -23,10 +23,10 @@ export async function POST(
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    // Apenas MASTER pode aprovar
-    if (session.user.role !== 'MASTER') {
+    // MASTER, RH e Administrador podem aprovar solicitações de exclusão
+    if (!['MASTER', 'RH', 'ADMIN'].includes(session.user.role)) {
       return NextResponse.json(
-        { error: 'Apenas o MASTER pode aprovar exclusões' },
+        { error: 'Apenas MASTER, RH e Administrador podem aprovar exclusões' },
         { status: 403 }
       );
     }
@@ -73,7 +73,7 @@ export async function POST(
 
     const resultado = await prisma.$transaction(async tx => {
       if (aprovado) {
-        // Aprovar e excluir funcionário
+        // Aprovar e marcar como inativo (soft-delete: registros preservados para uso jurídico)
         await tx.solicitacaoExclusaoColaborador.update({
           where: { id: params.id },
           data: {
@@ -84,8 +84,9 @@ export async function POST(
           },
         });
 
-        await tx.funcionario.delete({
+        await tx.funcionario.update({
           where: { id: solicitacao.funcionarioId },
+          data: { ativo: false, excluidoEm: new Date() },
         });
 
         return { aprovado: true, message: 'Colaborador excluído com sucesso' };

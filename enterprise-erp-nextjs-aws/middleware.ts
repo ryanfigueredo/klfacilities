@@ -263,6 +263,62 @@ export async function middleware(req: NextRequest) {
     }
   }
 
+  // PROTEÇÃO ROBUSTA: Bloquear ADMIN de acessar rotas de Configurações e Operacional
+  if (userRole === 'ADMIN') {
+    // Rotas permitidas para ADMIN (apenas Financeiro)
+    const adminAllowedPaths = [
+      '/dashboard',
+      '/movimentos',
+      '/provisionamento',
+      '/rh/processos', // Processos Jurídicos agora está em Financeiro
+      '/api/movimentos',
+      '/api/provisionamentos',
+      '/api/financeiro',
+      '/api/dashboard',
+      '/api/processos-juridicos/',
+      '/api/auth/',
+    ];
+
+    // Rotas bloqueadas para ADMIN
+    const adminBlockedPaths = [
+      '/config/', // Todas as configurações
+      '/operacional/', // Tudo operacional
+      '/checklist-admin', // Avaliações
+      '/ponto/', // Ponto Digital
+      '/administracao/', // Administração (mensagens, emails)
+      '/auditoria', // Auditoria
+      '/rh/colaboradores', // Colaboradores - apenas MASTER
+      '/rh/crachas', // Crachás - apenas MASTER
+      '/rh/banco-talentos', // Banco de Talentos - apenas MASTER
+      '/rh/central-atendimento', // Central de Atendimento - apenas MASTER
+    ];
+
+    // Verificar se está tentando acessar rota bloqueada
+    const isBlocked = adminBlockedPaths.some(path =>
+      url.pathname.startsWith(path)
+    );
+
+    if (isBlocked) {
+      console.log(
+        `[MIDDLEWARE] ADMIN tentou acessar rota bloqueada: ${url.pathname}`
+      );
+      return NextResponse.redirect(new URL('/dashboard', req.url), 302);
+    }
+
+    // Verificar se a rota atual é permitida (para APIs)
+    const isAllowed = adminAllowedPaths.some(
+      path => url.pathname.startsWith(path) || url.pathname === path
+    );
+
+    // Se não for permitida e não for API pública, bloquear
+    if (!isAllowed && !url.pathname.startsWith('/api/')) {
+      console.log(
+        `[MIDDLEWARE] ADMIN tentou acessar rota não permitida: ${url.pathname}`
+      );
+      return NextResponse.redirect(new URL('/dashboard', req.url), 302);
+    }
+  }
+
   // PROTEÇÃO ROBUSTA: Bloquear JURIDICO de acessar rotas não permitidas
   if (userRole === 'JURIDICO') {
     // Rotas permitidas APENAS para JURIDICO (apenas Processos Jurídicos)
@@ -291,10 +347,16 @@ export async function middleware(req: NextRequest) {
     '/dashboard': ['MASTER', 'ADMIN', 'SUPERVISOR'], // MASTER e ADMIN podem acessar dashboard
     '/movimentos': ['MASTER', 'ADMIN'], // MASTER e ADMIN podem acessar movimentos
     '/provisionamento': ['MASTER', 'ADMIN'], // MASTER e ADMIN podem acessar provisionamento
-    '/checklist-admin': ['MASTER', 'ADMIN', 'SUPERVISOR', 'OPERACIONAL'], // OPERACIONAL pode acessar avaliações
-    '/config/usuarios': ['MASTER', 'ADMIN'], // MASTER e ADMIN podem acessar usuários
-    '/config/responsaveis': ['MASTER', 'ADMIN', 'OPERACIONAL'], // MASTER, ADMIN e OPERACIONAL podem acessar responsáveis
-    '/config/categorias': ['MASTER', 'ADMIN', 'SUPERVISOR', 'OPERACIONAL'], // OPERACIONAL pode acessar categorias
+    '/rh/processos': ['MASTER', 'ADMIN', 'RH', 'JURIDICO'], // Processos Jurídicos
+    '/checklist-admin': ['MASTER', 'SUPERVISOR', 'OPERACIONAL'], // OPERACIONAL pode acessar avaliações (ADMIN removido)
+    '/config/usuarios': ['MASTER', 'PLANEJAMENTO_ESTRATEGICO'], // ADMIN removido
+    '/config/responsaveis': ['MASTER', 'OPERACIONAL'], // ADMIN removido
+    '/config/categorias': ['MASTER', 'SUPERVISOR', 'OPERACIONAL'], // ADMIN removido
+    '/config/organograma': ['MASTER', 'OPERACIONAL'], // ADMIN removido
+    '/config/grupos': ['MASTER', 'RH', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'], // ADMIN removido
+    '/config/supervisores': ['MASTER', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'], // ADMIN removido
+    '/config/unidades': ['MASTER', 'RH', 'OPERACIONAL', 'PLANEJAMENTO_ESTRATEGICO'], // ADMIN removido
+    '/config/branding': ['MASTER', 'PLANEJAMENTO_ESTRATEGICO'], // ADMIN removido
   };
 
   for (const [path, roles] of Object.entries(protectedByRole)) {

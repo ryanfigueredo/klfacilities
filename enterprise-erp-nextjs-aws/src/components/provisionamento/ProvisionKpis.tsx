@@ -22,7 +22,7 @@ export function ProvisionKpis({ className, onReady }: KpisProps) {
       currency: 'BRL',
     }).format(n || 0);
 
-  const load = async () => {
+  const load = React.useCallback(async () => {
     setLoading(true);
     try {
       const start = new Date();
@@ -57,11 +57,11 @@ export function ProvisionKpis({ className, onReady }: KpisProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [onReady]);
 
   React.useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   return (
     <div className={className}>

@@ -2,6 +2,7 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// url é necessário no Prisma 6; em Prisma 7 a URL fica em prisma.config.ts
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -123,6 +124,7 @@ model User {
   registrosPontoEditados        RegistroPonto[]                  @relation("RegistroPontoEditadoPor")
   manifestacoesRespondidas      ManifestacaoFuncionario[]        @relation("ManifestacaoRespondidaPor")
   processosJuridicos            ProcessoJuridico[]
+  parcelasMarcadasComoPagas     ParcelaProcesso[]
   solicitacoesExclusao          SolicitacaoExclusaoColaborador[] @relation("SolicitacoesExclusao")
   aprovacoesExclusao            SolicitacaoExclusaoColaborador[] @relation("SolicitacoesAprovacao")
   supervisorScopes              SupervisorScope[]
@@ -143,6 +145,7 @@ model User {
   emailsSent                    EmailLog[]                       @relation("EmailsSentBy")
   solicitacoesExclusaoConfig    SolicitacaoExclusaoConfig[]      @relation("SolicitacoesExclusaoConfig")
   aprovacoesExclusaoConfig      SolicitacaoExclusaoConfig[]      @relation("AprovacoesExclusaoConfig")
+  fcmTokens                     FcmToken[]
 }
 
 model Unidade {
@@ -163,6 +166,7 @@ model Unidade {
   mapeamentos        MapeamentoGrupoUnidadeResponsavel[]
 
   funcionarios                   Funcionario[]
+  funcionariosPermitidos         FuncionarioUnidade[]
   pontos                         RegistroPonto[]
   qrcodes                        PontoQrCode[]
   checklists                     ChecklistDigital[]
@@ -371,15 +375,15 @@ enum UrgenciaNivel {
 }
 
 model CategoriaUrgenciaChamado {
-  id            String         @id @default(uuid())
+  id            String        @id @default(uuid())
   urgenciaNivel UrgenciaNivel // Nível de urgência: Crítica, Alta, Normal, Baixa, Muito Baixa
-  nome          String         // Nome da categoria (ex: "Funcionário Faltou", "Falta de Insumos")
-  prazoHoras    Int            // Prazo em horas para resolução (calculado automaticamente)
-  descricao     String?        // Descrição do prazo (calculada automaticamente)
-  ordem         Int            @default(0) // Ordem de exibição (calculada automaticamente)
-  ativo         Boolean        @default(true)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  nome          String // Nome da categoria (ex: "Funcionário Faltou", "Falta de Insumos")
+  prazoHoras    Int // Prazo em horas para resolução (calculado automaticamente)
+  descricao     String? // Descrição do prazo (calculada automaticamente)
+  ordem         Int           @default(0) // Ordem de exibição (calculada automaticamente)
+  ativo         Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
   incidentes    Incidente[]
 
   @@index([urgenciaNivel])
@@ -495,6 +499,20 @@ model Movimento {
   @@index([updatedById])
 }
 
+model FuncionarioUnidade {
+  id           String   @id @default(uuid())
+  funcionarioId String
+  unidadeId    String
+  createdAt   DateTime @default(now())
+
+  funcionario Funcionario @relation(fields: [funcionarioId], references: [id], onDelete: Cascade)
+  unidade    Unidade     @relation(fields: [unidadeId], references: [id], onDelete: Cascade)
+
+  @@unique([funcionarioId, unidadeId])
+  @@index([funcionarioId])
+  @@index([unidadeId])
+}
+
 model Funcionario {
   id             String   @id @default(uuid())
   nome           String   @unique
@@ -507,12 +525,15 @@ model Funcionario {
   cargo          String? // Cargo/função do colaborador
   diaFolga       Int? // Dia da semana de folga (0=Domingo, 1=Segunda, 2=Terça, 3=Quarta, 4=Quinta, 5=Sexta, 6=Sábado)
   grupoId        String
-  unidadeId      String?
+  unidadeId      String? // Unidade principal (primeira da lista; mantido para compatibilidade)
+  ativo          Boolean  @default(true) // false = demitido/excluído (soft delete; registros preservados)
+  excluidoEm     DateTime? // Data em que a exclusão foi aprovada
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   grupo                Grupo                            @relation(fields: [grupoId], references: [id])
   unidade              Unidade?                         @relation(fields: [unidadeId], references: [id])
+  unidadesPermitidas   FuncionarioUnidade[]             // Unidades onde pode bater ponto
   movimentos           Movimento[]
   registrosPonto       RegistroPonto[]
   termoCiencia         TermoCienciaPonto?
@@ -521,6 +542,7 @@ model Funcionario {
   @@index([grupoId])
   @@index([unidadeId])
   @@index([codigo])
+  @@index([ativo])
 }
 
 model AuditLog {
@@ -795,6 +817,22 @@ model PasswordResetToken {
   @@index([expiresAt])
 }
 
+model FcmToken {
+  id         String   @id @default(uuid())
+  userId     String
+  token      String   @unique
+  deviceId   String?
+  deviceName String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  lastUsedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([deviceId])
+}
+
 model ChecklistTemplate {
   id              String   @id @default(uuid())
   titulo          String
@@ -954,10 +992,10 @@ model ClienteFinal {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  unidade                    Unidade?              @relation(fields: [unidadeId], references: [id])
-  grupos                     ClienteFinalGrupo[]
-  confirmacoesRelatorio       ChecklistRelatorioConfirmacao[]
-  incidentes                 Incidente[]
+  unidade               Unidade?                        @relation(fields: [unidadeId], references: [id])
+  grupos                ClienteFinalGrupo[]
+  confirmacoesRelatorio ChecklistRelatorioConfirmacao[]
+  incidentes            Incidente[]
 
   @@unique([email])
   @@index([unidadeId])
@@ -965,10 +1003,10 @@ model ClienteFinal {
 }
 
 model ClienteFinalGrupo {
-  id            String   @id @default(uuid())
+  id             String   @id @default(uuid())
   clienteFinalId String
-  grupoId       String
-  createdAt     DateTime @default(now())
+  grupoId        String
+  createdAt      DateTime @default(now())
 
   clienteFinal ClienteFinal @relation(fields: [clienteFinalId], references: [id], onDelete: Cascade)
   grupo        Grupo        @relation(fields: [grupoId], references: [id], onDelete: Cascade)
@@ -1215,19 +1253,25 @@ enum StatusParcela {
 }
 
 model ProcessoJuridico {
-  id             String         @id @default(uuid())
-  numeroProcesso String // Número do processo (ex: 1234567-89.2024.8.26.0100)
-  reclamante     String? // Reclamante (antes: cliente)
-  advogado       String? // Nome do advogado responsável
-  escritorio     String? // Escritório de advocacia
-  tipoProcesso   String? // Tipo do processo (trabalhista, cível, tributário, etc)
-  valorCausa     Decimal? // Valor da causa (antes: valorProcesso)
-  observacoes    String? // Observações gerais
-  status         StatusProcesso @default(EM_ANDAMENTO)
-  arquivosUrl    String[]       @default([]) // URLs de documentos anexos (S3)
-  criadoPorId    String
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id                           String         @id @default(uuid())
+  numeroProcesso               String // Número do processo (ex: 1234567-89.2024.8.26.0100)
+  reclamante                   String? // Reclamante (antes: cliente)
+  advogado                     String? // Nome do advogado responsável
+  escritorio                   String? // Escritório de advocacia
+  tipoProcesso                 String? // Tipo do processo (trabalhista, cível, tributário, etc)
+  valorCausa                   Decimal? // Valor da causa (antes: valorProcesso)
+  observacoes                  String? // Observações gerais
+  status                       StatusProcesso @default(EM_ANDAMENTO)
+  arquivosUrl                  String[]       @default([]) // URLs de documentos anexos (S3)
+  // Campos de custas e pagamentos
+  custasProcessuais            Decimal? // Custas processuais
+  contribuicoesPrevidenciarias Decimal? // Contribuições previdenciárias
+  honorariosPericiais          Decimal? // Honorários periciais
+  dadosPagamento               String? // Dados de pagamento (JSON ou texto livre)
+  contasBancarias              String? // Contas bancárias (JSON ou texto livre)
+  criadoPorId                  String
+  createdAt                    DateTime       @default(now())
+  updatedAt                    DateTime       @updatedAt
 
   criadoPor User              @relation(fields: [criadoPorId], references: [id])
   parcelas  ParcelaProcesso[]
@@ -1238,20 +1282,26 @@ model ProcessoJuridico {
 }
 
 model ParcelaProcesso {
-  id                 String        @id @default(uuid())
-  processoJuridicoId String
-  valor              Decimal
-  diaVencimento      Int // Dia do mês (1-31)
-  mesVencimento      Int // Mês (1-12)
-  anoVencimento      Int? // Ano opcional (null = recorrente)
-  status             StatusParcela @default(PENDENTE)
-  notificadoEm       DateTime? // Quando foi enviado o alerta de 2 dias
-  pagoEm             DateTime? // Quando foi marcado como pago
-  observacoes        String?
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  id                      String        @id @default(uuid())
+  processoJuridicoId      String
+  valor                   Decimal
+  diaVencimento           Int // Dia do mês (1-31)
+  mesVencimento           Int // Mês (1-12)
+  anoVencimento           Int? // Ano opcional (null = recorrente)
+  status                  StatusParcela @default(PENDENTE)
+  notificadoEm            DateTime? // Quando foi enviado o alerta de 2 dias
+  pagoEm                  DateTime? // Quando foi marcado como pago
+  observacoes             String?
+  // Campos de pagamento
+  comprovantePagamentoUrl String? // URL do comprovante de pagamento (S3)
+  marcadoComoPagoPor      String? // ID do usuário que marcou como pago
+  marcadoComoPagoEm       DateTime? // Data/hora em que foi marcado como pago
+  naoPago                 Boolean       @default(false) // Flag para marcar como não pago
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
 
   processoJuridico ProcessoJuridico @relation(fields: [processoJuridicoId], references: [id], onDelete: Cascade)
+  marcadoPor       User?            @relation(fields: [marcadoComoPagoPor], references: [id])
 
   @@index([processoJuridicoId])
   @@index([status])

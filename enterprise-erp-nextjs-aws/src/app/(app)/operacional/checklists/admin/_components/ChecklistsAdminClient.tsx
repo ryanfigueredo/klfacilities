@@ -619,10 +619,12 @@ function TemplateEditorDialog({
         descricao: descricao.trim() || undefined,
         ativo,
         grupos: grupos.map((grupo, grupoIndex) => ({
+          id: grupo.id, // Incluir ID do grupo para atualização inteligente
           titulo: grupo.titulo.trim(),
           descricao: grupo.descricao.trim() || undefined,
           ordem: grupoIndex,
           perguntas: grupo.perguntas.map((pergunta, perguntaIndex) => ({
+            id: pergunta.id, // Incluir ID da pergunta para atualização inteligente
             titulo: pergunta.titulo.trim(),
             descricao: pergunta.descricao.trim() || undefined,
             tipo: pergunta.tipo,

@@ -19,11 +19,9 @@ import ChecklistsScreen from "./src/screens/ChecklistsScreen";
 import NovoChecklistScreen from "./src/screens/NovoChecklistScreen";
 import ResponderChecklistScreen from "./src/screens/ResponderChecklistScreen";
 import WebViewScreen from "./src/screens/WebViewScreen";
-import BancoTalentosScreen from "./src/screens/BancoTalentosScreen";
-import IncidentesScreen from "./src/screens/IncidentesScreen";
-import AvaliacoesScreen from "./src/screens/AvaliacoesScreen";
 import ProtocoloScreen from "./src/screens/ProtocoloScreen";
 import ChecklistBanheirosScreen from "./src/screens/ChecklistBanheirosScreen";
+import VisualizarChecklistRespondidoScreen from "./src/screens/VisualizarChecklistRespondidoScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -42,15 +40,21 @@ function AppContent() {
   const [initError, setInitError] = useState<string | null>(null);
   const navigationRef = useRef<NavigationContainerRef<any>>(null);
 
-  console.log("🎬 AppContent renderizado - loading:", loading, "error:", initError);
+  if (__DEV__) {
+    console.log("🎬 AppContent renderizado - loading:", loading, "error:", initError);
+  }
 
   useEffect(() => {
     let mounted = true;
-    console.log("📱 useEffect executado - iniciando verificação");
+    if (__DEV__) {
+      console.log("📱 useEffect executado - iniciando verificação");
+    }
 
     // Timeout de segurança para garantir que o loading termine
     const safetyTimeout = setTimeout(() => {
-      console.log("⚠️ Safety timeout: forçando fim do loading");
+      if (__DEV__) {
+        console.log("⚠️ Safety timeout: forçando fim do loading");
+      }
       if (mounted) {
         setLoading(false);
       }
@@ -59,7 +63,9 @@ function AppContent() {
     // Verificar se há usuário salvo (opcional)
     checkStoredAuth()
       .catch((error) => {
-        console.error("❌ Erro na inicialização:", error);
+        if (__DEV__) {
+          console.error("❌ Erro na inicialização:", error);
+        }
         if (mounted) {
           setInitError(error?.message || "Erro desconhecido na inicialização");
           setLoading(false);
@@ -77,30 +83,50 @@ function AppContent() {
 
   const checkStoredAuth = async () => {
     try {
-      console.log("🚀 Iniciando verificação de autenticação...");
+      if (__DEV__) {
+        console.log("🚀 Iniciando verificação de autenticação...");
+      }
       
       // Verificar se há token salvo e validar
       const { obterUsuarioAtual, initializeAuth } = await import("./src/services/api");
       
-      // Inicializar token se existir
-      await initializeAuth();
+      // Inicializar token se existir (pode falhar silenciosamente no iOS)
+      try {
+        await initializeAuth();
+      } catch (authInitError: any) {
+        // No iOS, initializeAuth pode falhar se Keychain não estiver disponível
+        // Não quebrar o app, apenas continuar sem token
+        if (__DEV__) {
+          console.warn("⚠️ Auth init falhou (pode ser normal no iOS):", authInitError);
+        }
+      }
       
       // Tentar obter usuário atual com o token
+      // Se SecureStore falhar no iOS, obterUsuarioAtual retorna null silenciosamente
       const storedUser = await obterUsuarioAtual();
       
       if (storedUser) {
-        console.log("✅ Usuário encontrado, fazendo login automático");
+        if (__DEV__) {
+          console.log("✅ Usuário encontrado, fazendo login automático");
+        }
         setUser(storedUser);
       } else {
-        console.log("ℹ️ Nenhum usuário salvo, indo para tela de login");
+        if (__DEV__) {
+          console.log("ℹ️ Nenhum usuário salvo, indo para tela de login");
+        }
       }
       
       setLoading(false);
     } catch (error: any) {
-      console.error("❌ Erro ao verificar autenticação:", error);
-      setInitError(error?.message || "Erro ao inicializar");
+      // Erro crítico - logar mas não quebrar o app completamente
+      if (__DEV__) {
+        console.error("❌ Erro ao verificar autenticação:", error);
+        console.error("Error stack:", error?.stack);
+      }
+      // Não definir erro fatal - deixar usuário tentar fazer login
+      setInitError(null); // Limpar erro para não bloquear o app
       setLoading(false);
-      throw error;
+      // Não fazer throw - deixar app continuar
     }
   };
 
@@ -115,7 +141,9 @@ function AppContent() {
       const { setAuthToken } = await import("./src/services/api");
       setAuthToken(null);
     } catch (error) {
-      console.error("Erro ao limpar dados de autenticação:", error);
+      if (__DEV__) {
+        console.error("Erro ao limpar dados de autenticação:", error);
+      }
     }
     setUser(null);
     if (navigationRef.current?.isReady()) {
@@ -160,7 +188,9 @@ function AppContent() {
       <NavigationContainer
         ref={navigationRef}
         onReady={() => {
-          console.log("NavigationContainer ready");
+          if (__DEV__) {
+            console.log("NavigationContainer ready");
+          }
         }}
       >
         <Stack.Navigator
@@ -188,17 +218,11 @@ function AppContent() {
           <Stack.Screen name="ResponderChecklist">
             {() => <ResponderChecklistScreen />}
           </Stack.Screen>
+          <Stack.Screen name="VisualizarChecklistRespondido">
+            {() => <VisualizarChecklistRespondidoScreen />}
+          </Stack.Screen>
           <Stack.Screen name="WebView">
             {() => <WebViewScreen />}
-          </Stack.Screen>
-          <Stack.Screen name="BancoTalentos">
-            {() => <BancoTalentosScreen />}
-          </Stack.Screen>
-          <Stack.Screen name="Incidentes">
-            {() => <IncidentesScreen />}
-          </Stack.Screen>
-          <Stack.Screen name="Avaliacoes">
-            {() => <AvaliacoesScreen />}
           </Stack.Screen>
           <Stack.Screen name="Protocolo">
             {() => <ProtocoloScreen />}

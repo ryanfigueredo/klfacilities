@@ -10,7 +10,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { CheckCircle2, Clock, Mail, FileText, Download, Search, Eye, Trash, Archive, PlayCircle } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { CheckCircle2, Clock, Mail, FileText, Download, Search, Eye, Trash, Archive, PlayCircle, User } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 
@@ -182,41 +183,61 @@ export function ChecklistsRespondidosClient({
     return mesesList;
   }, []);
 
-  // Filtrar respostas baseado no termo de busca
-  const respostasFiltradas = useMemo(() => {
-    if (!searchTerm.trim()) {
-      return respostas;
-    }
+  // Filtro por status: concluídos, em aberto ou todos
+  type FiltroStatus = 'concluidos' | 'abertos' | 'todos';
+  const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>('concluidos');
 
+  // Aplicar filtro de status primeiro
+  const respostasPorStatus = useMemo(() => {
+    if (filtroStatus === 'todos') return respostas;
+    if (filtroStatus === 'concluidos') {
+      return respostas.filter(r => r.status === 'CONCLUIDO');
+    }
+    return respostas.filter(
+      r => r.status === 'RASCUNHO' || r.status === 'PENDENTE_APROVACAO'
+    );
+  }, [respostas, filtroStatus]);
+
+  // Filtrar respostas baseado no termo de busca (sobre respostasPorStatus)
+  const respostasFiltradasPorBusca = useMemo(() => {
+    if (!searchTerm.trim()) return respostasPorStatus;
     const term = searchTerm.toLowerCase().trim();
-    return respostas.filter(resposta => {
-      // Buscar por nome do grupo
-      if (resposta.grupo?.nome.toLowerCase().includes(term)) {
-        return true;
-      }
-      // Buscar por nome da unidade
-      if (resposta.unidade.nome.toLowerCase().includes(term)) {
-        return true;
-      }
-      // Buscar por nome do supervisor
-      if (resposta.supervisor.name.toLowerCase().includes(term)) {
-        return true;
-      }
-      // Buscar por email do supervisor
-      if (resposta.supervisor.email.toLowerCase().includes(term)) {
-        return true;
-      }
-      // Buscar por título do template
-      if (resposta.template.titulo.toLowerCase().includes(term)) {
-        return true;
-      }
-      // Buscar por protocolo
-      if (resposta.protocolo?.toLowerCase().includes(term)) {
-        return true;
-      }
+    return respostasPorStatus.filter(resposta => {
+      if (resposta.grupo?.nome.toLowerCase().includes(term)) return true;
+      if (resposta.unidade.nome.toLowerCase().includes(term)) return true;
+      if (resposta.supervisor.name.toLowerCase().includes(term)) return true;
+      if (resposta.supervisor.email.toLowerCase().includes(term)) return true;
+      if (resposta.template.titulo.toLowerCase().includes(term)) return true;
+      if (resposta.protocolo?.toLowerCase().includes(term)) return true;
       return false;
     });
-  }, [respostas, searchTerm]);
+  }, [respostasPorStatus, searchTerm]);
+
+  // Supervisores únicos (para abas), ordenados por nome
+  const supervisoresUnicos = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; email: string }>();
+    respostasFiltradasPorBusca.forEach(r => {
+      if (!map.has(r.supervisor.id)) {
+        map.set(r.supervisor.id, {
+          id: r.supervisor.id,
+          name: r.supervisor.name,
+          email: r.supervisor.email,
+        });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, 'pt-BR')
+    );
+  }, [respostasFiltradasPorBusca]);
+
+  // Aba ativa: 'todos' ou id do supervisor
+  const [abaSupervisorId, setAbaSupervisorId] = useState<string>('todos');
+
+  // Respostas exibidas conforme a aba (busca já aplicada)
+  const respostasPorAba = useMemo(() => {
+    if (abaSupervisorId === 'todos') return respostasFiltradasPorBusca;
+    return respostasFiltradasPorBusca.filter(r => r.supervisor.id === abaSupervisorId);
+  }, [respostasFiltradasPorBusca, abaSupervisorId]);
 
   const handleDelete = async (respostaId: string) => {
     if (!confirm('Tem certeza que deseja excluir este checklist? Esta ação não pode ser desfeita.')) {
@@ -368,31 +389,36 @@ export function ChecklistsRespondidosClient({
     }
   };
 
-  const totalConfirmacoes = respostasFiltradas.reduce(
+  const countConcluidos = respostas.filter(r => r.status === 'CONCLUIDO').length;
+  const countAbertos = respostas.filter(
+    r => r.status === 'RASCUNHO' || r.status === 'PENDENTE_APROVACAO'
+  ).length;
+
+  const totalConfirmacoes = respostasPorAba.reduce(
     (acc, r) => acc + r.confirmacoes.length,
     0
   );
-  const totalConfirmadas = respostasFiltradas.reduce(
+  const totalConfirmadas = respostasPorAba.reduce(
     (acc, r) =>
       acc + r.confirmacoes.filter(c => c.confirmado).length,
     0
   );
 
   return (
-    <div className="space-y-6">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950/40 rounded-lg p-4 md:p-6 space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">
             Checklists Respondidos
           </h1>
           <p className="text-sm text-muted-foreground">
-            Visualize todos os checklists que foram aprovados e enviados para os clientes finais
+            Visualize e filtre por status, supervisor e busca
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline">
+              <Button variant="outline" className="border-border bg-card shadow-sm">
                 <Archive className="h-4 w-4 mr-2" />
                 Exportar em Lote
               </Button>
@@ -460,22 +486,99 @@ export function ChecklistsRespondidosClient({
               placeholder="Buscar por grupo, unidade, supervisor..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              className="pl-9"
+              className="pl-9 bg-card border-border shadow-sm"
             />
           </div>
         </div>
       </div>
 
-      {/* Estatísticas */}
+      {/* Filtro por status */}
+      <Card className="border-border bg-card shadow-sm">
+        <CardContent className="pt-4 pb-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Status</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={filtroStatus === 'concluidos' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFiltroStatus('concluidos')}
+              className="gap-1.5 shadow-sm"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              Concluídos ({countConcluidos})
+            </Button>
+            <Button
+              variant={filtroStatus === 'abertos' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFiltroStatus('abertos')}
+              className="gap-1.5"
+            >
+              <Clock className="h-4 w-4" />
+              Em aberto ({countAbertos})
+            </Button>
+            <Button
+              variant={filtroStatus === 'todos' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFiltroStatus('todos')}
+              className="gap-1.5"
+            >
+              <FileText className="h-4 w-4" />
+              Todos ({respostas.length})
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Abas por supervisor — destaque visual */}
+      <Card className="border-border bg-card shadow-sm overflow-hidden">
+        <CardContent className="p-0">
+          <div className="px-4 pt-4 pb-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Supervisor</p>
+            <p className="text-sm text-foreground/80 mt-0.5">Clique em um nome para ver só os relatórios dele(a)</p>
+          </div>
+          <Tabs value={abaSupervisorId} onValueChange={setAbaSupervisorId} className="w-full">
+            <TabsList className="flex flex-wrap h-auto gap-2 rounded-none border-0 border-t border-border bg-slate-100 dark:bg-slate-800/60 p-3 w-full justify-start">
+              <TabsTrigger
+                value="todos"
+                className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md px-4 py-2 rounded-lg font-medium"
+              >
+                <FileText className="h-4 w-4 shrink-0" />
+                Todos ({respostasFiltradasPorBusca.length})
+              </TabsTrigger>
+              {supervisoresUnicos.map(sup => {
+                const count = respostasFiltradasPorBusca.filter(r => r.supervisor.id === sup.id).length;
+                return (
+                  <TabsTrigger
+                    key={sup.id}
+                    value={sup.id}
+                    className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md px-4 py-2 rounded-lg font-medium border border-transparent data-[state=inactive]:border-border data-[state=inactive]:bg-card data-[state=inactive]:text-foreground"
+                    title={sup.name}
+                  >
+                    <User className="h-4 w-4 shrink-0" />
+                    <span className="truncate max-w-[160px]">{sup.name}</span>
+                    <span className="tabular-nums opacity-80">({count})</span>
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+          </Tabs>
+        </CardContent>
+      </Card>
+
+      {/* Estatísticas (referentes à aba selecionada) */}
       <div className="grid gap-4 md:grid-cols-3">
-        <Card>
+        <Card className="border-border bg-card shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Total de Checklists
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{respostasFiltradas.length}</div>
+            <div className="text-2xl font-bold text-foreground">{respostasPorAba.length}</div>
+            {abaSupervisorId !== 'todos' && (
+              <p className="text-xs text-muted-foreground mt-1">
+                deste supervisor
+              </p>
+            )}
             {searchTerm && (
               <p className="text-xs text-muted-foreground mt-1">
                 de {respostas.length} total
@@ -483,24 +586,24 @@ export function ChecklistsRespondidosClient({
             )}
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border bg-card shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Confirmações Enviadas
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalConfirmacoes}</div>
+            <div className="text-2xl font-bold text-foreground">{totalConfirmacoes}</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border bg-card shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Confirmações Recebidas
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">
+            <div className="text-2xl font-bold text-green-600 dark:text-green-400">
               {totalConfirmadas}
             </div>
             {totalConfirmacoes > 0 && (
@@ -514,8 +617,8 @@ export function ChecklistsRespondidosClient({
 
       {/* Lista de Checklists */}
       <div className="space-y-4">
-        {respostasFiltradas.length === 0 ? (
-          <Card>
+        {respostasPorAba.length === 0 ? (
+          <Card className="border-border bg-card shadow-sm">
             <CardContent className="py-12">
               <div className="flex flex-col items-center gap-4 text-center">
                 <FileText className="h-12 w-12 text-muted-foreground/40" />
@@ -523,20 +626,24 @@ export function ChecklistsRespondidosClient({
                   <p className="text-sm font-medium text-foreground mb-1">
                     {searchTerm
                       ? 'Nenhum checklist encontrado com os filtros aplicados'
-                      : 'Nenhum checklist respondido ainda'}
+                      : filtroStatus === 'concluidos'
+                        ? 'Nenhum checklist concluído'
+                        : filtroStatus === 'abertos'
+                          ? 'Nenhum checklist em aberto'
+                          : 'Nenhum checklist encontrado'}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {searchTerm
                       ? 'Tente ajustar os termos de busca'
-                      : 'Os checklists aprovados aparecerão aqui'}
+                      : 'Altere o filtro (Concluídos / Em aberto / Todos) ou aguarde novos envios'}
                   </p>
                 </div>
               </div>
             </CardContent>
           </Card>
         ) : (
-          respostasFiltradas.map(resposta => (
-            <Card key={resposta.id}>
+          respostasPorAba.map(resposta => (
+            <Card key={resposta.id} className="border-border bg-card shadow-sm">
               <CardHeader>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1">
@@ -586,7 +693,7 @@ export function ChecklistsRespondidosClient({
                     <p className="text-xs text-muted-foreground">{resposta.supervisor.email}</p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">Data de Envio</p>
+                    <p className="text-muted-foreground">Último envio</p>
                     <p className="font-medium">
                       {new Date(resposta.submittedAt).toLocaleString('pt-BR')}
                     </p>
@@ -650,7 +757,8 @@ export function ChecklistsRespondidosClient({
                 )}
 
                 <div className="flex justify-end gap-2 pt-2 border-t">
-                  {resposta.status === 'CONCLUIDO' ? (
+                  {/* Permitir Master e Operacional verem checklists não concluídos */}
+                  {(userRole === 'MASTER' || userRole === 'OPERACIONAL' || resposta.status === 'CONCLUIDO') && (
                     <>
                       <Link href={`/operacional/checklists/visualizar/${resposta.id}`}>
                         <Button size="sm" variant="outline">
@@ -658,23 +766,26 @@ export function ChecklistsRespondidosClient({
                           Ver Checklist
                         </Button>
                       </Link>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleDownloadPDF(resposta.id)}
-                        disabled={baixandoId === resposta.id}
-                      >
-                        {baixandoId === resposta.id ? (
-                          'Gerando...'
-                        ) : (
-                          <>
-                            <Download className="h-4 w-4 mr-2" />
-                            Baixar PDF
-                          </>
-                        )}
-                      </Button>
+                      {resposta.status === 'CONCLUIDO' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDownloadPDF(resposta.id)}
+                          disabled={baixandoId === resposta.id}
+                        >
+                          {baixandoId === resposta.id ? (
+                            'Gerando...'
+                          ) : (
+                            <>
+                              <Download className="h-4 w-4 mr-2" />
+                              Baixar PDF
+                            </>
+                          )}
+                        </Button>
+                      )}
                     </>
-                  ) : (
+                  )}
+                  {resposta.status !== 'CONCLUIDO' && userRole !== 'MASTER' && userRole !== 'OPERACIONAL' && (
                     <Link href={`/operacional/checklists/responder/${resposta.escopoId}?respostaId=${resposta.id}`}>
                       <Button size="sm" variant="default">
                         <PlayCircle className="h-4 w-4 mr-2" />

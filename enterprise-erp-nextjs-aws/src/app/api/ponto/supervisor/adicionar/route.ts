@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
       where: { id: funcionarioId },
       include: {
         unidade: true,
+        unidadesPermitidas: { select: { unidadeId: true } },
       },
     });
 
@@ -54,24 +55,35 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Funcionário não encontrado' }, { status: 404 });
     }
 
-    if (!funcionario.unidadeId) {
+    const funcionarioUnidadeIds = (funcionario as any).unidadesPermitidas?.length
+      ? (funcionario as any).unidadesPermitidas.map((u: any) => u.unidadeId)
+      : funcionario.unidadeId
+        ? [funcionario.unidadeId]
+        : [];
+
+    if (funcionarioUnidadeIds.length === 0) {
       return NextResponse.json(
-        { error: 'Funcionário não está vinculado a uma unidade' },
+        { error: 'Funcionário não está vinculado a nenhuma unidade' },
         { status: 400 }
       );
     }
 
-    // Verificar permissão do supervisor (se for supervisor, verificar scope)
+    // Verificar permissão do supervisor (pelo menos uma unidade do funcionário no scope)
     if (me.role === 'SUPERVISOR') {
       const scope = await getSupervisorScope(me.id);
-      if (!scope.unidadeIds.includes(funcionario.unidadeId)) {
+      const temPermissao = funcionarioUnidadeIds.some((uid: string) =>
+        scope.unidadeIds.includes(uid)
+      );
+      if (!temPermissao) {
         return NextResponse.json(
           { error: 'Sem permissão para adicionar ponto para este funcionário' },
           { status: 403 }
         );
       }
     }
-    // ADMIN, MASTER e OPERACIONAL têm acesso total
+
+    const unidadeIdParaRegistro =
+      funcionario.unidadeId || funcionarioUnidadeIds[0];
 
     // Validar timestamp
     const dataPonto = new Date(timestamp);
@@ -83,7 +95,7 @@ export async function POST(req: NextRequest) {
     const registro = await prisma.registroPonto.create({
       data: {
         funcionarioId: funcionario.id,
-        unidadeId: funcionario.unidadeId,
+        unidadeId: unidadeIdParaRegistro,
         tipo: tipo as any,
         timestamp: dataPonto,
         criadoPorId: me.id, // Supervisor que adicionou manualmente

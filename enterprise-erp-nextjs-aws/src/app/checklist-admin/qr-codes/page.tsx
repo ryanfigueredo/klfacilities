@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Image from 'next/image';
 import QRCode from 'qrcode';
 
 interface Unidade {
@@ -127,10 +128,13 @@ export default function QRCodesPage() {
 
                 {qrCodes[unidade.id] ? (
                   <div className="mb-4">
-                    <img
+                    <Image
                       src={qrCodes[unidade.id]}
                       alt={`QR Code para ${unidade.nome}`}
+                      width={200}
+                      height={200}
                       className="mx-auto border border-gray-200 rounded"
+                      unoptimized
                     />
                     <div className="mt-3 text-center">
                       <p className="text-sm font-medium text-gray-700">

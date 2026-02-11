@@ -9,7 +9,7 @@ export async function GET(
   { params }: { params: Promise<{ respostaId: string }> }
 ) {
   try {
-    const me = await getCurrentUser();
+    const me = await getCurrentUser(request);
     if (!me) {
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }
@@ -56,6 +56,13 @@ export async function GET(
             email: true,
           },
         },
+        gerenteAssinadoPor: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
         respostas: {
           include: {
             pergunta: true,
@@ -80,6 +87,9 @@ export async function GET(
         observacoes: resposta.observacoes,
         protocolo: resposta.protocolo,
         assinaturaFotoUrl: resposta.assinaturaFotoUrl,
+        gerenteAssinaturaFotoUrl: resposta.gerenteAssinaturaFotoUrl ?? null,
+        gerenteAssinadoEm: resposta.gerenteAssinadoEm ?? null,
+        gerenteAssinadoPor: resposta.gerenteAssinadoPor ?? null,
         startedAt: resposta.startedAt,
         submittedAt: resposta.submittedAt,
         createdAt: resposta.createdAt,
@@ -109,7 +119,7 @@ export async function DELETE(
   { params }: { params: Promise<{ respostaId: string }> }
 ) {
   try {
-    const me = await getCurrentUser();
+    const me = await getCurrentUser(request);
     if (!me) {
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     }

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">KL Facilities</string>
+    <string name="notification_channel_name">Lembretes de ponto</string>
+    <string name="notification_channel_description">Lembretes para não esquecer de bater o ponto.</string>
+    <string name="notification_reminder_title">Lembrete de ponto</string>
+    <string name="notification_reminder_text_named">%1$s, não se esqueça de bater seu ponto!</string>
+    <string name="notification_reminder_text_generic">Colaborador, não se esqueça de bater seu ponto!</string>
+</resources>

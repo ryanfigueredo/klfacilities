@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import {
   Card,
   CardContent,
@@ -75,6 +77,7 @@ export default function ConfigPage() {
         'ADMIN',
         'RH',
         'SUPERVISOR',
+        'OPERACIONAL',
       ]),
       canEdit: hasRouteAccess(userRole, ['MASTER', 'ADMIN']),
     },
@@ -107,7 +110,7 @@ export default function ConfigPage() {
       description: 'Visualização hierárquica da estrutura organizacional em tempo real',
       icon: Network,
       href: '/config/organograma',
-      canView: hasRouteAccess(userRole, ['MASTER']),
+      canView: hasRouteAccess(userRole, ['MASTER', 'ADMIN', 'OPERACIONAL']),
       canEdit: false,
     },
   ];

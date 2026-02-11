@@ -32,6 +32,7 @@ const DEFAULT_FORM_STATE: BrandingFormState = {
   accentColor: '#0088c7',
   sidebarBackground: '#f6fbff',
   sidebarTextColor: '#0b2b4f',
+};
 
 const COLOR_FIELDS: Array<{
   key: keyof BrandingFormState;

@@ -29,10 +29,13 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Estatísticas gerais
+    // Estatísticas gerais (colaboradores que atuam em pelo menos uma unidade do scope)
     const whereFuncionario: any = {};
-    if (allowedUnidades) {
-      whereFuncionario.unidadeId = { in: allowedUnidades };
+    if (allowedUnidades?.length) {
+      whereFuncionario.OR = [
+        { unidadeId: { in: allowedUnidades } },
+        { unidadesPermitidas: { some: { unidadeId: { in: allowedUnidades } } } },
+      ];
     }
 
     const totalColaboradores = await prisma.funcionario.count({

@@ -72,10 +72,13 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Buscar funcionários das unidades do supervisor
+  // Buscar funcionários que atuam em pelo menos uma das unidades do supervisor (principal ou permitidas)
   const funcionarios = await prisma.funcionario.findMany({
     where: {
-      unidadeId: { in: unidadesPermitidas },
+      OR: [
+        { unidadeId: { in: unidadesPermitidas } },
+        { unidadesPermitidas: { some: { unidadeId: { in: unidadesPermitidas } } } },
+      ],
     },
     include: {
       unidade: {

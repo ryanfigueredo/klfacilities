@@ -2,18 +2,16 @@
   "expo": {
     "name": "KL Colaboradores",
     "slug": "kl-colaboradores",
-    "version": "1.0.0",
+    "version": "1.1",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#009ee2"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.kl.colaboradores",
@@ -28,7 +26,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#009ee2"
       },
       "package": "com.kl.colaboradores",
@@ -72,8 +70,7 @@
         {
           "cameraPermission": "Este app precisa de acesso à câmera para tirar a selfie de registro de ponto.",
           "photosPermission": false,
-          "mediaLibraryPermission": false,
-          "allowsEditing": true
+          "mediaLibraryPermission": false
         }
       ],
       "expo-secure-store",

@@ -24,6 +24,12 @@ const processoSchema = z.object({
   observacoes: z.string().optional().nullable(),
   status: z.enum(['EM_ANDAMENTO', 'ARQUIVADO', 'AGUARDANDO_PAGAMENTO', 'PAGO', 'CANCELADO']).optional(),
   parcelas: z.array(parcelaSchema).optional(),
+  // Novos campos de pagamento
+  custasProcessuais: z.coerce.number().optional().nullable(),
+  contribuicoesPrevidenciarias: z.coerce.number().optional().nullable(),
+  honorariosPericiais: z.coerce.number().optional().nullable(),
+  dadosPagamento: z.string().optional().nullable(),
+  contasBancarias: z.string().optional().nullable(),
 });
 
 export async function PUT(
@@ -49,6 +55,14 @@ export async function PUT(
       return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
     }
 
+    // Apenas MASTER e JURIDICO podem editar valores
+    if (!['MASTER', 'JURIDICO'].includes(user.role)) {
+      return NextResponse.json(
+        { error: 'Apenas usuários Jurídico podem editar valores de processos' },
+        { status: 403 }
+      );
+    }
+
     const body = await req.json();
     const validatedData = processoSchema.parse(body);
 
@@ -63,6 +77,17 @@ export async function PUT(
     }
     if (validatedData.observacoes !== undefined) data.observacoes = validatedData.observacoes;
     if (validatedData.status !== undefined) data.status = validatedData.status;
+    if (validatedData.custasProcessuais !== undefined) {
+      data.custasProcessuais = validatedData.custasProcessuais ? new Decimal(validatedData.custasProcessuais) : null;
+    }
+    if (validatedData.contribuicoesPrevidenciarias !== undefined) {
+      data.contribuicoesPrevidenciarias = validatedData.contribuicoesPrevidenciarias ? new Decimal(validatedData.contribuicoesPrevidenciarias) : null;
+    }
+    if (validatedData.honorariosPericiais !== undefined) {
+      data.honorariosPericiais = validatedData.honorariosPericiais ? new Decimal(validatedData.honorariosPericiais) : null;
+    }
+    if (validatedData.dadosPagamento !== undefined) data.dadosPagamento = validatedData.dadosPagamento;
+    if (validatedData.contasBancarias !== undefined) data.contasBancarias = validatedData.contasBancarias;
 
     // Gerenciar parcelas se fornecidas
     if (validatedData.parcelas !== undefined) {
@@ -84,7 +109,7 @@ export async function PUT(
 
     const processo = await prisma.processoJuridico.update({
       where: { id },
-      data,
+      data: data as any,
       include: {
         criadoPor: {
           select: {
@@ -99,7 +124,7 @@ export async function PUT(
             { mesVencimento: 'asc' },
             { diaVencimento: 'asc' },
           ],
-        },
+        } as any,
       },
     });
 
@@ -107,9 +132,19 @@ export async function PUT(
     const processoSerializado = {
       ...processo,
       valorCausa: processo.valorCausa ? Number(processo.valorCausa) : null,
+      custasProcessuais: (processo as any).custasProcessuais ? Number((processo as any).custasProcessuais) : null,
+      contribuicoesPrevidenciarias: (processo as any).contribuicoesPrevidenciarias ? Number((processo as any).contribuicoesPrevidenciarias) : null,
+      honorariosPericiais: (processo as any).honorariosPericiais ? Number((processo as any).honorariosPericiais) : null,
+      dadosPagamento: (processo as any).dadosPagamento || null,
+      contasBancarias: (processo as any).contasBancarias || null,
       parcelas: processo.parcelas.map((parcela) => ({
         ...parcela,
         valor: Number(parcela.valor),
+        comprovantePagamentoUrl: (parcela as any).comprovantePagamentoUrl || null,
+        marcadoComoPagoPor: (parcela as any).marcadoComoPagoPor || null,
+        marcadoComoPagoEm: (parcela as any).marcadoComoPagoEm || null,
+        naoPago: (parcela as any).naoPago || false,
+        marcadoPor: (parcela as any).marcadoPor || null,
       })),
     };
 

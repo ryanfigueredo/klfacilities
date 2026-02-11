@@ -166,6 +166,8 @@ export default function ScanPage() {
     return () => {
       currentStream?.getTracks().forEach(t => t.stop());
     };
+    // startFaceRecognition é estável em propósito; dependências reais: faceApiLoaded e faceDescriptors
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [faceApiLoaded, faceDescriptors.length]);
 
   const captureSelfie = async (): Promise<Blob | null> => {

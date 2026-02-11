@@ -33,7 +33,7 @@ export async function GET(
 
     const { respostaId } = await params;
 
-    // Buscar resposta completa
+    // Buscar resposta completa (inclui assinaturaFotoUrl e gerenteAssinaturaFotoUrl para o PDF)
     const resposta = await prisma.checklistResposta.findUnique({
       where: { id: respostaId },
       include: {
@@ -83,6 +83,17 @@ export async function GET(
       },
     });
 
+    // Garantir que os campos de assinatura e gerente existam no objeto para o PDF
+    const respostaParaPdf = resposta
+      ? {
+          ...resposta,
+          assinaturaFotoUrl: resposta.assinaturaFotoUrl ?? null,
+          gerenteAssinaturaFotoUrl: resposta.gerenteAssinaturaFotoUrl ?? null,
+          gerenteAssinadoEm: resposta.gerenteAssinadoEm ?? null,
+          gerenteAssinadoPor: resposta.gerenteAssinadoPor ?? null,
+        }
+      : null;
+
     if (!resposta) {
       return NextResponse.json(
         { error: 'Resposta não encontrada' },
@@ -90,8 +101,8 @@ export async function GET(
       );
     }
 
-    // Gerar PDF
-    const pdfBuffer = await generateChecklistPDF(resposta as any);
+    // Gerar PDF (com URLs de assinatura do supervisor e do gerente)
+    const pdfBuffer = await generateChecklistPDF(respostaParaPdf as any);
 
     const dataStr = new Date(resposta.submittedAt || resposta.createdAt).toISOString().split('T')[0];
     const nomeArquivo = `checklist-${sanitizeFileName(resposta.unidade.nome)}-${dataStr}.pdf`;

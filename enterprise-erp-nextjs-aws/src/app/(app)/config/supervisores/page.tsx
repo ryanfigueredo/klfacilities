@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { Role } from '@prisma/client';
-import { Plus, Trash2, ChevronDown, X } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, X, RefreshCw } from 'lucide-react';
 import { WhatsAppIcon } from '@/components/icons/WhatsAppIcon';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
@@ -562,6 +562,9 @@ export default function SupervisoresPage() {
       <Card>
         <CardHeader>
           <CardTitle>Novo Vínculo</CardTitle>
+          <p className="text-sm text-muted-foreground mt-1">
+            No app (checklists e pontos), o supervisor vê apenas as <strong>unidades</strong> vinculadas. Se vincular só por grupo, ele verá todas as lojas do grupo. Para restringir a lojas específicas (ex.: Itapevi, Tamboré), vincule pelas unidades.
+          </p>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -844,7 +847,21 @@ export default function SupervisoresPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Vínculos Ativos</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Vínculos Ativos</CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                fetchData();
+                toast.success('Vínculos atualizados com sucesso');
+              }}
+              disabled={loading}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Atualizar Vínculos
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <Input

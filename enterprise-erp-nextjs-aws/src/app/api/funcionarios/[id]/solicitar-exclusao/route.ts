@@ -23,11 +23,11 @@ export async function POST(
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    // MASTER pode excluir diretamente, RH envia solicitação para aprovação
+    // MASTER, RH e ADMIN podem excluir diretamente; outros não têm acesso
     const userRole = (session.user as any).role;
-    if (!['MASTER', 'RH'].includes(userRole)) {
+    if (!['MASTER', 'RH', 'ADMIN'].includes(userRole)) {
       return NextResponse.json(
-        { error: 'Apenas MASTER e RH podem solicitar exclusão' },
+        { error: 'Apenas MASTER, RH e Administrador podem excluir colaboradores' },
         { status: 403 }
       );
     }
@@ -75,8 +75,8 @@ export async function POST(
       );
     }
 
-    // MASTER exclui imediatamente
-    if (userRole === 'MASTER') {
+    // RH, MASTER e ADMIN excluem diretamente (sem aprovação). Soft delete: registros preservados.
+    if (['MASTER', 'RH', 'ADMIN'].includes(userRole)) {
       try {
         const resultado = await prisma.$transaction(async tx => {
           const solicitacao = await tx.solicitacaoExclusaoColaborador.create({
@@ -90,8 +90,9 @@ export async function POST(
             },
           });
 
-          await tx.funcionario.delete({
+          await tx.funcionario.update({
             where: { id: params.id },
+            data: { ativo: false, excluidoEm: new Date() },
           });
 
           return solicitacao;
@@ -99,17 +100,19 @@ export async function POST(
 
         return NextResponse.json({
           ok: true,
-          message: 'Colaborador excluído com sucesso',
+          message: 'Colaborador excluído. Ele permanece na lista de inativos/demitidos e os registros de ponto são preservados.',
           solicitacaoId: resultado.id,
         });
       } catch (error) {
         if (isMissingSolicitacaoTable(error)) {
-          // Efetua a exclusão mesmo sem registrar a solicitação e orienta a rodar migrações
           try {
-            await prisma.funcionario.delete({ where: { id: params.id } });
-          } catch (deleteError) {
-            if (!(deleteError instanceof PrismaClientKnownRequestError && deleteError.code === 'P2025')) {
-              throw deleteError;
+            await prisma.funcionario.update({
+              where: { id: params.id },
+              data: { ativo: false, excluidoEm: new Date() },
+            });
+          } catch (updateError) {
+            if (!(updateError instanceof PrismaClientKnownRequestError && updateError.code === 'P2025')) {
+              throw updateError;
             }
           }
           return NextResponse.json({
@@ -124,7 +127,7 @@ export async function POST(
       }
     }
 
-    // RH cria solicitação pendente aguardando aprovação do MASTER
+    // Fallback: criar solicitação pendente (não deve chegar aqui com as roles atuais)
     try {
       const solicitacao = await prisma.solicitacaoExclusaoColaborador.create({
         data: {

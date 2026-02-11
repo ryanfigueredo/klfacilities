@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "310413011924",
+    "project_id": "kl-admin",
+    "storage_bucket": "kl-admin.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:310413011924:android:d5e1be45701f535d76c441",
+        "android_client_info": {
+          "package_name": "com.kl.adm"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBUSJh3dItQv1G2T-BWBEwlA9E-Q1syv8U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

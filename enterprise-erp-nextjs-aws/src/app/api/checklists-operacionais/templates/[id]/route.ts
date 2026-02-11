@@ -9,6 +9,7 @@ import { prisma } from '@/lib/prisma';
 import { logAudit } from '@/lib/audit/log';
 
 const perguntaSchema = z.object({
+  id: z.string().optional(), // ID opcional para atualizar pergunta existente
   titulo: z.string().min(1),
   descricao: z.string().optional(),
   tipo: z.nativeEnum(ChecklistPerguntaTipo),
@@ -18,9 +19,11 @@ const perguntaSchema = z.object({
   opcoes: z.array(z.string().min(1)).optional(),
   peso: z.number().int().min(1).max(5).optional().nullable(),
   permiteMultiplasFotos: z.boolean().optional(),
+  permiteAnexarFoto: z.boolean().optional(), // Adicionar campo permiteAnexarFoto
 });
 
 const grupoSchema = z.object({
+  id: z.string().optional(), // ID opcional para atualizar grupo existente
   titulo: z.string().min(1),
   descricao: z.string().optional(),
   ordem: z.number().int().min(0).optional(),
@@ -132,82 +135,157 @@ export async function PUT(
         });
 
         if (payload.grupos) {
-          const respostasCount = await tx.checklistResposta.count({
+          // Buscar grupos e perguntas existentes
+          const gruposExistentes = await tx.checklistGrupoTemplate.findMany({
             where: { templateId: id },
+            include: { perguntas: true },
+            orderBy: { ordem: 'asc' },
           });
 
-          if (respostasCount > 0) {
-            throw new Error('CHECKLIST_HAS_RESPONSES');
-          }
-
-          await tx.checklistPerguntaTemplate.deleteMany({
-            where: { grupo: { templateId: id } },
-          });
-          await tx.checklistGrupoTemplate.deleteMany({
-            where: { templateId: id },
+          const perguntasExistentesMap = new Map<string, typeof gruposExistentes[0]['perguntas'][0]>();
+          gruposExistentes.forEach(grupo => {
+            grupo.perguntas.forEach(pergunta => {
+              perguntasExistentesMap.set(pergunta.id, pergunta);
+            });
           });
 
-          // Preparar todos os grupos para inserção em batch
-          const gruposToCreate = payload.grupos.map((grupo, grupoIndex) => ({
-            templateId: id,
-            titulo: grupo.titulo,
-            descricao: grupo.descricao,
-            ordem: grupo.ordem ?? grupoIndex,
-          }));
+          // Processar grupos: atualizar existentes ou criar novos
+          const gruposProcessados: Array<{ id: string; ordem: number }> = [];
 
-          // Criar todos os grupos de uma vez
-          const createdGrupos = await tx.checklistGrupoTemplate.createManyAndReturn({
-            data: gruposToCreate,
-          });
+          for (const [grupoIndex, grupoPayload] of payload.grupos.entries()) {
+            let grupoId: string;
 
-          // Ordenar os grupos criados pela ordem para garantir correspondência
-          createdGrupos.sort((a, b) => a.ordem - b.ordem);
-
-          // Preparar todas as perguntas para inserção em batch
-          const perguntasToCreate: Array<{
-            grupoId: string;
-            titulo: string;
-            descricao: string | null;
-            tipo: ChecklistPerguntaTipo;
-            obrigatoria: boolean;
-            ordem: number;
-            instrucoes: string | null;
-            opcoes: string[];
-            peso: number | null;
-            permiteMultiplasFotos: boolean;
-          }> = [];
-
-          for (const [grupoIndex, grupo] of payload.grupos.entries()) {
-            const createdGrupo = createdGrupos[grupoIndex];
-            if (!createdGrupo) continue;
-
-            for (const [perguntaIndex, pergunta] of (
-              grupo.perguntas ?? []
-            ).entries()) {
-              perguntasToCreate.push({
-                grupoId: createdGrupo.id,
-                titulo: pergunta.titulo,
-                descricao: pergunta.descricao ?? null,
-                tipo: pergunta.tipo,
-                obrigatoria: pergunta.obrigatoria ?? false,
-                ordem: pergunta.ordem ?? perguntaIndex,
-                instrucoes: pergunta.instrucoes ?? null,
-                opcoes:
-                  pergunta.tipo === ChecklistPerguntaTipo.SELECAO
-                    ? pergunta.opcoes ?? []
-                    : [],
-                peso: pergunta.peso ?? null,
-                permiteMultiplasFotos: pergunta.tipo === ChecklistPerguntaTipo.FOTO 
-                  ? (pergunta.permiteMultiplasFotos ?? false)
-                  : false,
+            // Se grupo tem ID e existe, atualizar; senão, criar novo
+            if (grupoPayload.id) {
+              const grupoExistente = gruposExistentes.find(g => g.id === grupoPayload.id);
+              if (grupoExistente) {
+                // Atualizar grupo existente
+                await tx.checklistGrupoTemplate.update({
+                  where: { id: grupoPayload.id },
+                  data: {
+                    titulo: grupoPayload.titulo,
+                    descricao: grupoPayload.descricao ?? null,
+                    ordem: grupoPayload.ordem ?? grupoIndex,
+                  },
+                });
+                grupoId = grupoPayload.id;
+              } else {
+                // ID não encontrado, criar novo
+                const novoGrupo = await tx.checklistGrupoTemplate.create({
+                  data: {
+                    templateId: id,
+                    titulo: grupoPayload.titulo,
+                    descricao: grupoPayload.descricao ?? null,
+                    ordem: grupoPayload.ordem ?? grupoIndex,
+                  },
+                });
+                grupoId = novoGrupo.id;
+              }
+            } else {
+              // Criar novo grupo
+              const novoGrupo = await tx.checklistGrupoTemplate.create({
+                data: {
+                  templateId: id,
+                  titulo: grupoPayload.titulo,
+                  descricao: grupoPayload.descricao ?? null,
+                  ordem: grupoPayload.ordem ?? grupoIndex,
+                },
               });
+              grupoId = novoGrupo.id;
+            }
+
+            gruposProcessados.push({ id: grupoId, ordem: grupoPayload.ordem ?? grupoIndex });
+
+            // Processar perguntas do grupo
+            for (const [perguntaIndex, perguntaPayload] of (grupoPayload.perguntas ?? []).entries()) {
+              if (perguntaPayload.id && perguntasExistentesMap.has(perguntaPayload.id)) {
+                // Atualizar pergunta existente (preserva respostas)
+                await tx.checklistPerguntaTemplate.update({
+                  where: { id: perguntaPayload.id },
+                  data: {
+                    titulo: perguntaPayload.titulo,
+                    descricao: perguntaPayload.descricao ?? null,
+                    tipo: perguntaPayload.tipo,
+                    obrigatoria: perguntaPayload.obrigatoria ?? false,
+                    ordem: perguntaPayload.ordem ?? perguntaIndex,
+                    instrucoes: perguntaPayload.instrucoes ?? null,
+                    opcoes:
+                      perguntaPayload.tipo === ChecklistPerguntaTipo.SELECAO
+                        ? perguntaPayload.opcoes ?? []
+                        : [],
+                    peso: perguntaPayload.peso ?? null,
+                    permiteMultiplasFotos: perguntaPayload.tipo === ChecklistPerguntaTipo.FOTO 
+                      ? (perguntaPayload.permiteMultiplasFotos ?? false)
+                      : false,
+                    permiteAnexarFoto: perguntaPayload.permiteAnexarFoto ?? false,
+                    // Atualizar grupoId se mudou
+                    grupoId: grupoId,
+                  },
+                });
+              } else {
+                // Criar nova pergunta
+                await tx.checklistPerguntaTemplate.create({
+                  data: {
+                    grupoId: grupoId,
+                    titulo: perguntaPayload.titulo,
+                    descricao: perguntaPayload.descricao ?? null,
+                    tipo: perguntaPayload.tipo,
+                    obrigatoria: perguntaPayload.obrigatoria ?? false,
+                    ordem: perguntaPayload.ordem ?? perguntaIndex,
+                    instrucoes: perguntaPayload.instrucoes ?? null,
+                    opcoes:
+                      perguntaPayload.tipo === ChecklistPerguntaTipo.SELECAO
+                        ? perguntaPayload.opcoes ?? []
+                        : [],
+                    peso: perguntaPayload.peso ?? null,
+                    permiteMultiplasFotos: perguntaPayload.tipo === ChecklistPerguntaTipo.FOTO 
+                      ? (perguntaPayload.permiteMultiplasFotos ?? false)
+                      : false,
+                    permiteAnexarFoto: perguntaPayload.permiteAnexarFoto ?? false,
+                  },
+                });
+              }
             }
           }
 
-          // Criar todas as perguntas de uma vez
-          if (perguntasToCreate.length > 0) {
-            await tx.checklistPerguntaTemplate.createMany({
-              data: perguntasToCreate,
+          // Deletar grupos que não estão mais no payload
+          const gruposIdsPayload = new Set(
+            payload.grupos
+              .map(g => g.id)
+              .filter((id): id is string => !!id)
+          );
+          const gruposParaDeletar = gruposExistentes.filter(g => !gruposIdsPayload.has(g.id));
+          
+          if (gruposParaDeletar.length > 0) {
+            const gruposIdsParaDeletar = gruposParaDeletar.map(g => g.id);
+            
+            // Deletar perguntas dos grupos que serão deletados
+            await tx.checklistPerguntaTemplate.deleteMany({
+              where: { grupoId: { in: gruposIdsParaDeletar } },
+            });
+            
+            // Deletar grupos
+            await tx.checklistGrupoTemplate.deleteMany({
+              where: { id: { in: gruposIdsParaDeletar } },
+            });
+          }
+
+          // Deletar perguntas que não estão mais no payload (mas mantém os grupos)
+          const perguntasIdsPayload = new Set(
+            payload.grupos
+              .flatMap(g => g.perguntas ?? [])
+              .map(p => p.id)
+              .filter((id): id is string => !!id)
+          );
+          
+          const perguntasParaDeletar = Array.from(perguntasExistentesMap.values()).filter(
+            p => !perguntasIdsPayload.has(p.id)
+          );
+
+          if (perguntasParaDeletar.length > 0) {
+            const perguntasIdsParaDeletar = perguntasParaDeletar.map(p => p.id);
+            await tx.checklistPerguntaTemplate.deleteMany({
+              where: { id: { in: perguntasIdsParaDeletar } },
             });
           }
         }
@@ -253,35 +331,8 @@ export async function PUT(
       template: serializeTemplate(template),
     });
   } catch (error) {
-    if (error instanceof Error && error.message === 'CHECKLIST_HAS_RESPONSES') {
-      const ipHeader = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || '127.0.0.1';
-      const ip = ipHeader.split(',')[0].trim();
-      const userAgent = request.headers.get('user-agent') || 'api';
-      
-      await logAudit({
-        action: 'checklist.template.update',
-        resource: 'ChecklistTemplate',
-        resourceId: id,
-        userId: me.id,
-        userEmail: me.email || '',
-        userRole: me.role || '',
-        success: false,
-        error: 'CHECKLIST_HAS_RESPONSES',
-        ip,
-        userAgent,
-        method: 'PUT',
-        url: `/api/checklists-operacionais/templates/${id}`,
-      });
-      
-      return NextResponse.json(
-        {
-          error: 'invalid_operation',
-          message:
-            'Não é possível alterar as perguntas porque já existem respostas registradas.',
-        },
-        { status: 409 }
-      );
-    }
+    // Removido: Não bloqueia mais edição quando há respostas
+    // Agora permite atualizar perguntas existentes preservando as respostas
 
     console.error('Erro ao atualizar checklist operacional:', error);
     

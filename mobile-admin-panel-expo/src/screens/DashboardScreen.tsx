@@ -162,7 +162,8 @@ export default function DashboardScreen({
               {(user.role === "SUPERVISOR" ||
                 user.role === "MASTER" ||
                 user.role === "ADMIN" ||
-                user.role === "RH") && (
+                user.role === "RH" ||
+                user.role === "OPERACIONAL") && (
                 <TouchableOpacity
                   style={[styles.card, { marginBottom: 16 }]}
                   onPress={() => navigation.navigate("Pontos" as never)}
@@ -173,76 +174,6 @@ export default function DashboardScreen({
                   <Text style={styles.cardTitle}>Pontos</Text>
                   <Text style={styles.cardSubtitle}>
                     Visualizar e gerenciar registros de ponto
-                  </Text>
-                </TouchableOpacity>
-              )}
-
-              {/* Card de Funcionários */}
-              {(user.role === "MASTER" ||
-                user.role === "ADMIN" ||
-                user.role === "RH") && (
-                <TouchableOpacity style={[styles.card, { marginBottom: 16 }]}>
-                  <View style={styles.cardIconContainer}>
-                    <Ionicons name="people" size={32} color="#666" />
-                  </View>
-                  <Text style={styles.cardTitle}>Funcionários</Text>
-                  <Text style={styles.cardSubtitle}>
-                    Gerenciar cadastro de funcionários
-                  </Text>
-                </TouchableOpacity>
-              )}
-
-              {/* Card de Incidentes */}
-              {(user.role === "MASTER" ||
-                user.role === "ADMIN" ||
-                user.role === "SUPERVISOR") && (
-                <TouchableOpacity
-                  style={[styles.card, { marginBottom: 16 }]}
-                  onPress={() => navigation.navigate("Incidentes" as never)}
-                >
-                  <View style={styles.cardIconContainer}>
-                    <Ionicons name="warning" size={32} color="#f44336" />
-                  </View>
-                  <Text style={styles.cardTitle}>Incidentes</Text>
-                  <Text style={styles.cardSubtitle}>
-                    Visualizar chamados e incidentes
-                  </Text>
-                </TouchableOpacity>
-              )}
-
-              {/* Card de Avaliações */}
-              {(user.role === "MASTER" ||
-                user.role === "ADMIN" ||
-                user.role === "SUPERVISOR") && (
-                <TouchableOpacity
-                  style={[styles.card, { marginBottom: 16 }]}
-                  onPress={() => navigation.navigate("Avaliacoes" as never)}
-                >
-                  <View style={styles.cardIconContainer}>
-                    <Ionicons name="star" size={32} color="#666" />
-                  </View>
-                  <Text style={styles.cardTitle}>Avaliações</Text>
-                  <Text style={styles.cardSubtitle}>
-                    Gerenciar avaliações e checklists
-                  </Text>
-                </TouchableOpacity>
-              )}
-
-              {/* Card de Banco de Talentos */}
-              {(user.role === "MASTER" ||
-                user.role === "ADMIN" ||
-                user.role === "SUPERVISOR" ||
-                user.role === "RH") && (
-                <TouchableOpacity
-                  style={[styles.card, { marginBottom: 16 }]}
-                  onPress={() => navigation.navigate("BancoTalentos" as never)}
-                >
-                  <View style={styles.cardIconContainer}>
-                    <Ionicons name="briefcase" size={32} color="#666" />
-                  </View>
-                  <Text style={styles.cardTitle}>Banco de Talentos</Text>
-                  <Text style={styles.cardSubtitle}>
-                    Ver candidatos cadastrados
                   </Text>
                 </TouchableOpacity>
               )}

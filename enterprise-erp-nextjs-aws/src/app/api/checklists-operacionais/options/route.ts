@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getCurrentUser } from '@/lib/auth';
+
+export const maxDuration = 60;
 import { prisma } from '@/lib/prisma';
 import {
   getSupervisorScope,
@@ -15,7 +17,7 @@ export async function GET(request: NextRequest) {
   }
 
   const isSupervisor = me.role === 'SUPERVISOR' || me.role === 'LAVAGEM';
-  
+
   // Buscar scope do supervisor em paralelo com outras queries
   const [supervisorScope, grupos, unidades] = await Promise.all([
     isSupervisor ? getSupervisorScope(me.id) : Promise.resolve(null),
@@ -55,7 +57,10 @@ export async function GET(request: NextRequest) {
 
   const accessibleUnidades = unidades.filter(unidade => {
     if (!isSupervisor) return true;
-    return supervisorHasAccessToUnidade(unidade.id, supervisorScope?.unidadeIds ?? []);
+    return supervisorHasAccessToUnidade(
+      unidade.id,
+      supervisorScope?.unidadeIds ?? []
+    );
   });
 
   // Filtrar grupos para supervisor:
@@ -63,12 +68,12 @@ export async function GET(request: NextRequest) {
   // 1. Grupos diretamente vinculados ao supervisor (via SupervisorScope com grupoId)
   // 2. Grupos das unidades vinculadas ao supervisor (para permitir filtro no formulário)
   let accessibleGrupos: typeof grupos = [];
-  
+
   if (isSupervisor) {
     // Usar os grupos retornados pelo getSupervisorScope
     // Isso inclui grupos diretos E grupos das unidades vinculadas
     if (supervisorScope?.grupoIds && supervisorScope.grupoIds.length > 0) {
-      accessibleGrupos = grupos.filter(grupo => 
+      accessibleGrupos = grupos.filter(grupo =>
         supervisorScope.grupoIds.includes(grupo.id)
       );
     } else {
@@ -127,7 +132,9 @@ export async function GET(request: NextRequest) {
       descricao: template.descricao,
       escopos: template.escopos,
     })),
+    // Para o app mobile: quando for supervisor, enviar IDs permitidos para filtro no cliente
+    ...(isSupervisor && supervisorScope?.unidadeIds?.length
+      ? { allowedUnidadeIds: supervisorScope.unidadeIds }
+      : {}),
   });
 }
-
-

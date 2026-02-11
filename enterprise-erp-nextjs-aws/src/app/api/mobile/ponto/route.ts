@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { randomUUID, createHash } from 'crypto';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { logAudit } from '@/lib/audit/log';
+import { notifySupervisorsAboutPonto } from '@/lib/fcm';
 
 /**
  * OPTIONS /api/mobile/ponto
@@ -108,23 +109,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'CPF inválido' }, { status: 400 });
     }
 
-    // Buscar funcionário pelo CPF
+    // Buscar funcionário pelo CPF (com unidades permitidas para múltiplas lojas)
     let funcionario = await prisma.funcionario.findFirst({
       where: { cpf: cpfNormalizado },
-      include: { unidade: true },
+      include: {
+        unidade: true,
+        grupo: true,
+        unidadesPermitidas: { include: { unidade: true } },
+      },
     });
 
     if (!funcionario) {
       const todosFuncionarios = await prisma.funcionario.findMany({
         where: { cpf: { not: null } },
-        include: { unidade: true },
+        include: {
+          unidade: true,
+          grupo: true,
+          unidadesPermitidas: { include: { unidade: true } },
+        },
       });
 
-      funcionario = todosFuncionarios.find(f => {
-        if (!f.cpf) return false;
-        const cpfBancoNormalizado = f.cpf.replace(/\D/g, '').trim();
-        return cpfBancoNormalizado === cpfNormalizado;
-      }) || null;
+      funcionario =
+        todosFuncionarios.find(f => {
+          if (!f.cpf) return false;
+          const cpfBancoNormalizado = f.cpf.replace(/\D/g, '').trim();
+          return cpfBancoNormalizado === cpfNormalizado;
+        }) || null;
     }
 
     if (!funcionario) {
@@ -134,14 +144,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!funcionario.unidadeId || !funcionario.unidade) {
+    // Unidades onde o colaborador pode bater ponto (múltiplas permitidas)
+    const unidadesPermitidas =
+      funcionario.unidadesPermitidas?.length > 0
+        ? funcionario.unidadesPermitidas.map(u => u.unidade)
+        : funcionario.unidade
+          ? [funcionario.unidade]
+          : [];
+
+    if (unidadesPermitidas.length === 0) {
       return NextResponse.json(
-        { error: 'Funcionário não está vinculado a uma unidade' },
+        { error: 'Funcionário não está vinculado a nenhuma unidade' },
         { status: 400 }
       );
     }
-
-    const unidade = funcionario.unidade;
 
     // GPS é sempre obrigatório
     if (lat == null || lng == null) {
@@ -166,33 +182,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Geofence OBRIGATÓRIO
-    if (
-      unidade.lat != null &&
-      unidade.lng != null &&
-      unidade.radiusM != null
-    ) {
-      const dist = haversine(
-        Number(unidade.lat),
-        Number(unidade.lng),
-        lat,
-        lng
+    // Geofence: deve estar dentro de pelo menos UMA das unidades permitidas
+    let unidade = unidadesPermitidas.find(
+      u =>
+        u.lat != null &&
+        u.lng != null &&
+        u.radiusM != null &&
+        haversine(Number(u.lat), Number(u.lng), lat, lng) <= (u.radiusM ?? 0)
+    );
+
+    if (!unidade) {
+      const primeiraComGeofence = unidadesPermitidas.find(
+        u => u.lat != null && u.lng != null && u.radiusM != null
       );
-      if (dist > unidade.radiusM) {
-        return NextResponse.json(
-          {
-            error: `Você está fora da área permitida. Distância: ${Math.round(dist)}m (permitido: ${unidade.radiusM}m)`,
-            distance: Math.round(dist),
-            allowedRadius: unidade.radiusM,
-          },
-          { status: 400 }
-        );
-      }
-    } else {
       return NextResponse.json(
         {
-          error:
-            'Unidade não tem geofence configurado. Não é possível registrar ponto.',
+          error: primeiraComGeofence
+            ? 'Você está fora da área de todas as suas unidades. Aproxime-se de uma das lojas onde pode bater ponto.'
+            : 'Nenhuma das suas unidades tem geofence configurado. Não é possível registrar ponto.',
         },
         { status: 400 }
       );
@@ -208,10 +215,7 @@ export async function POST(req: NextRequest) {
 
     // Validações de selfie (mesmas do sistema web)
     if (!selfie.type.startsWith('image/')) {
-      return NextResponse.json(
-        { error: 'Selfie inválida' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Selfie inválida' }, { status: 400 });
     }
     if (selfie.size > 2 * 1024 * 1024) {
       return NextResponse.json(
@@ -226,7 +230,7 @@ export async function POST(req: NextRequest) {
     const dup = await prisma.registroPonto.findFirst({
       where: {
         funcionarioId: funcionario.id,
-        unidadeId: funcionario.unidadeId,
+        unidadeId: unidade.id,
         tipo: tipo as any,
         timestamp: { gte: twoMinAgo },
       },
@@ -265,11 +269,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Criar registro de ponto
+    // Criar registro de ponto (unidade = onde está dentro do geofence)
     const registro = await prisma.registroPonto.create({
       data: {
         funcionarioId: funcionario.id,
-        unidadeId: funcionario.unidadeId,
+        unidadeId: unidade.id,
         tipo: tipo as any,
         lat: lat,
         lng: lng,
@@ -293,6 +297,35 @@ export async function POST(req: NextRequest) {
       url: '/api/mobile/ponto',
     });
 
+    // Enviar notificação apenas para supervisores que cuidam deste colaborador específico
+    if (funcionario.id && funcionario.nome) {
+      try {
+        // Enviar notificação apenas para supervisores que têm acesso ao funcionário
+        notifySupervisorsAboutPonto(
+          funcionario.id,
+          unidade.id,
+          funcionario.grupoId || null,
+          {
+            registroId: registro.id,
+            funcionarioId: funcionario.id,
+            funcionarioNome: funcionario.nome,
+            tipo: registro.tipo,
+            timestamp: registro.timestamp.toISOString(),
+            unidadeNome: unidade.nome,
+            protocolo: undefined,
+          }
+        ).catch(error => {
+          console.error(
+            'Erro ao enviar notificação FCM (não bloqueia registro):',
+            error
+          );
+        });
+      } catch (error) {
+        // Não bloquear registro de ponto se falhar notificação
+        console.error('Erro ao buscar supervisores para notificação:', error);
+      }
+    }
+
     const response = NextResponse.json({
       success: true,
       registro: {
@@ -304,12 +337,15 @@ export async function POST(req: NextRequest) {
         },
       },
     });
-    
+
     // CORS headers
     response.headers.set('Access-Control-Allow-Origin', '*');
     response.headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    
+    response.headers.set(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization'
+    );
+
     return response;
   } catch (error: any) {
     console.error('Erro ao registrar ponto mobile:', error);
@@ -319,4 +355,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-

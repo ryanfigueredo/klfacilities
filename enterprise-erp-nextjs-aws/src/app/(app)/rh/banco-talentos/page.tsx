@@ -114,7 +114,7 @@ export default function BancoTalentosAdminPage() {
     | 'SUPERVISOR'
     | 'OPERACIONAL'
     | undefined;
-  const isAdmin = hasRouteAccess(userRole, ['MASTER', 'ADMIN']);
+  const isAdmin = hasRouteAccess(userRole, ['MASTER']);
 
   const [curriculos, setCurriculos] = useState<Curriculo[]>([]);
   const [unidades, setUnidades] = useState<Unidade[]>([]);

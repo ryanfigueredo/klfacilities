@@ -2,28 +2,38 @@
   "expo": {
     "name": "KL Administração",
     "slug": "kl-adm",
-    "version": "1.0.1",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#009ee2"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kl.adm",
-      "buildNumber": "2",
+      "buildNumber": "1",
       "icon": "./assets/icon.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Este app precisa de acesso à câmera para tirar fotos dos checklists.",
+        "NSPhotoLibraryUsageDescription": "Este app precisa de acesso à biblioteca de fotos para anexar imagens aos checklists.",
+        "NSPhotoLibraryAddUsageDescription": "Este app precisa salvar fotos dos checklists na sua biblioteca.",
         "NSLocationWhenInUseUsageDescription": "Este app precisa de acesso à localização para registrar a localização das respostas do checklist.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Este app precisa de acesso à localização para registrar a localização das respostas do checklist."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Este app precisa de acesso à localização para registrar a localização das respostas do checklist.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSExceptionDomains": {
+            "klfacilities.com.br": {
+              "NSExceptionAllowsInsecureHTTPLoads": false,
+              "NSIncludesSubdomains": true,
+              "NSExceptionRequiresForwardSecrecy": false
+            }
+          }
+        }
       },
       "config": {
         "usesNonExemptEncryption": false
@@ -31,7 +41,7 @@
       "privacyManifests": {
         "NSPrivacyAccessedAPITypes": []
       },
-        "privacyPolicyUrl": "https://www.klfacilities.com.br/compliance/privacidade"
+      "privacyPolicyUrl": "https://www.klfacilities.com.br/compliance/privacidade"
     },
     "web": {
       "favicon": "./assets/favicon-96x96.png"
@@ -57,9 +67,9 @@
         "expo-image-picker",
         {
           "cameraPermission": "Este app precisa de acesso à câmera para tirar fotos dos checklists.",
-          "photosPermission": false,
-          "mediaLibraryPermission": false,
-          "allowsEditing": true
+          "photosPermission": "Este app precisa de acesso à biblioteca de fotos para anexar imagens aos checklists.",
+          "mediaLibraryPermission": "Este app precisa de acesso à biblioteca de mídia para anexar imagens aos checklists.",
+          "allowsEditing": false
         }
       ],
       [
@@ -71,7 +81,7 @@
     ],
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#009ee2"
       },
       "package": "com.kl.adm",

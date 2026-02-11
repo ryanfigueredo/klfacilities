@@ -159,11 +159,7 @@ export function ChecklistVisualizarClient({
 
       {/* Respostas por Grupo */}
       {resposta.template.grupos.map((grupo: any) => {
-        const respostasGrupo = resposta.respostas.filter((r: any) =>
-          grupo.perguntas.some((p: any) => p.id === r.pergunta.id)
-        );
-
-        if (respostasGrupo.length === 0) return null;
+        // Mostrar todos os grupos, mesmo sem respostas
 
         return (
           <Card key={grupo.id}>
@@ -179,7 +175,7 @@ export function ChecklistVisualizarClient({
                   (r: any) => r.pergunta.id === pergunta.id
                 );
 
-                if (!respostaPergunta) return null;
+                // Mostrar todas as perguntas, mesmo sem resposta
 
                 return (
                   <div key={pergunta.id} className="border-b pb-4 last:border-0">
@@ -197,7 +193,11 @@ export function ChecklistVisualizarClient({
                     </div>
 
                     <div className="mt-2">
-                      {pergunta.tipo === 'BOOLEANO' && (
+                      {!respostaPergunta ? (
+                        <Badge variant="outline" className="bg-gray-100 text-gray-600">
+                          Não respondida
+                        </Badge>
+                      ) : pergunta.tipo === 'BOOLEANO' ? (
                         <div className="flex items-center gap-2">
                           <Badge
                             variant={
@@ -222,24 +222,28 @@ export function ChecklistVisualizarClient({
                             )}
                           </Badge>
                         </div>
-                      )}
+                      ) : null}
 
-                      {pergunta.tipo === 'TEXTO' && (
+                      {respostaPergunta && pergunta.tipo === 'TEXTO' && (
                         <p className="text-sm">{respostaPergunta.valorTexto || 'Não informado'}</p>
                       )}
 
-                      {pergunta.tipo === 'NUMERICO' && (
+                      {respostaPergunta && pergunta.tipo === 'NUMERICO' && (
                         <p className="text-sm font-medium">
                           {respostaPergunta.valorNumero ?? 'Não informado'}
                         </p>
                       )}
 
-                      {pergunta.tipo === 'SELECAO' && (
+                      {respostaPergunta && pergunta.tipo === 'SELECAO' && (
                         <p className="text-sm">{respostaPergunta.valorOpcao || 'Não informado'}</p>
                       )}
 
+                      {respostaPergunta && pergunta.tipo === 'FOTO' && !respostaPergunta.fotoUrl && (
+                        <p className="text-sm text-muted-foreground italic">Foto não anexada</p>
+                      )}
+
                       {/* Exibir fotos para qualquer tipo de pergunta que tenha foto anexada */}
-                      {respostaPergunta.fotoUrl && (() => {
+                      {respostaPergunta && respostaPergunta.fotoUrl && (() => {
                         // Processar múltiplas fotos (quando fotoUrl é JSON array)
                         let fotos: string[] = [];
                         try {
@@ -283,7 +287,7 @@ export function ChecklistVisualizarClient({
                         );
                       })()}
 
-                      {respostaPergunta.observacao && (
+                      {respostaPergunta && respostaPergunta.observacao && (
                         <p className="text-xs text-muted-foreground mt-2 italic">
                           Observação: {respostaPergunta.observacao}
                         </p>
