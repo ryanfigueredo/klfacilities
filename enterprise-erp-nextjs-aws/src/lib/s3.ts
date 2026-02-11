@@ -59,12 +59,13 @@ export async function getObjectBuffer(
     const stream = response.Body;
     if (!stream) return null;
     const chunks: Buffer[] = [];
+    const nodeStream = stream as NodeJS.ReadableStream;
     const buffer = await new Promise<Buffer>((resolve, reject) => {
-      stream.on('data', (chunk: Uint8Array) =>
+      nodeStream.on('data', (chunk: Uint8Array) =>
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
       );
-      stream.once('end', () => resolve(Buffer.concat(chunks)));
-      stream.once('error', reject);
+      nodeStream.once('end', () => resolve(Buffer.concat(chunks)));
+      nodeStream.once('error', reject);
     });
     return buffer;
   } catch (error) {
